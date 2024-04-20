@@ -15,6 +15,7 @@
             name = "py_env";
             targetPkgs = pkgs: (with pkgs; [
             nodePackages.pyright
+                zlib
                 (python312.withPackages(ps: with ps; [
                     virtualenv
                 ]))
