@@ -13,8 +13,8 @@ class ActiveSVM(ActiveModel):
             degree=3, # Only for `poly` kernel
         )
 
-    def fit(self, x_init: X, y_init: Y, x: X, y: Y):
-        self.model.fit(x_init, y_init)
+    def fit(self, x: X, y: Y):
+        self.model.fit(x, y)
         # TODO(marco): Continue
         print(self.model.support_vectors_)
 

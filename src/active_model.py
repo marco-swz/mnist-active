@@ -9,9 +9,27 @@ from keras.utils import to_categorical
 type X = Annotated[NDArray[np.float64], Literal["N", 28, 28]]
 type Y = Annotated[NDArray[np.int32], Literal["N"]]
 
+class Data:
+    x: X
+    _y: Y
+    idxs: NDArray[np.int32]
+    idxs_lbl: NDArray[np.int32]
+
+    def __init__(self, x: X, y: Y):
+        self.x = x
+        self._y = y
+        self.idxs_lbl = np.array([]);
+        self.idxs = np.arange(len(x))
+
+    def get_labels(self, idxs: NDArray) -> Y:
+        self.idxs_lbl = np.concatenate([self.idxs_lbl, idxs])
+        self.idxs = np.setdiff1d(self.idxs, idxs)
+        return self._y[idxs]
+
+
 class ActiveModel(ABC):
     @abstractmethod
-    def fit(self, x_init: X, y_init: Y, x: X, y: Y):
+    def fit(self, data: Data):
         pass
 
     @abstractmethod
