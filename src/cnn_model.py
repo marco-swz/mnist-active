@@ -32,27 +32,30 @@ class ActiveCNN(ActiveModel):
         batch_size = 25
         search_size = 1000
 
-        x = data.x
-        x = x.astype("float32") / 255
-        x = np.expand_dims(x, -1)
+        idxs_to_label = np.random.choice(data.unlabeled_indices(), batch_size, replace=False)
 
-        idxs_to_label = np.random.choice(len(x), batch_size, replace=False)
-
-        num_iterations = int((data.num_labels_max - len(data.idxs_labeled)) / batch_size)
+        num_iterations = int(data.num_unlabeled_remaining() / batch_size)
         for _ in range(num_iterations):
-            y = data.get_labels_for_indices(idxs_to_label)
+            x = data.features(idxs_to_label)
+            x = x.astype("float32") / 255
+            x = np.expand_dims(x, -1)
+
+            y = data.request_labels(idxs_to_label)
             y = utils.to_categorical(y, 10)
 
-            self.model.fit(x[idxs_to_label], y, batch_size=batch_size, epochs=50, verbose=1)
+            self.model.fit(x, y, batch_size=batch_size, epochs=50, verbose=1)
 
-            idxs_search = np.random.choice(len(data.idxs_unlabeled), search_size, replace=False)
-            pred_probs = self.model.predict(x[idxs_search], verbose=0)
+            idxs_search = np.random.choice(data.unlabeled_indices(), search_size, replace=False)
+            x_search = data.features(idxs_search)
+            x_search = x_search.astype("float32") / 255
+            x_search = np.expand_dims(x_search, -1)
+            pred_probs = self.model.predict(x_search, verbose=0)
+
             entropies = entropy(pred_probs, axis=1)
-
             idxs_max = np.argsort(entropies)[-batch_size:]
             idxs_to_label = idxs_search[idxs_max]
 
-        print(len(data.idxs_labeled))
+        print(data.num_unlabeled_remaining())
 
     def predict(self, x: X) -> NDArray:
         x = x.astype("float32") / 255

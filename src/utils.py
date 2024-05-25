@@ -16,13 +16,15 @@ class Data:
     It provides utility functions and ensures, only the allowed amount of labels are accessed.
     '''
     # All images
-    x: X
+    _x: X
     # All labels
     _y: Y
     # The indices of `x` which were not labeled
-    idxs_unlabeled: NDArray[np.int32]
+    _idxs_unlabeled: NDArray[np.int32]
     # The indices of `x` which were already labeled
-    idxs_labeled: NDArray[np.int32]
+    _idxs_labeled: NDArray[np.int32]
+    # Binary mask to indicate if a datapoint is part of the test set
+    _test_mask: NDArray[np.bool_]
     # Maximum number of labeled data
     num_labels_max: int
 
@@ -40,31 +42,55 @@ class Data:
 
         assert len(x) == len(y), '`x` and `y` need to be the same length!'
 
-        self.x = x
+        self._x = x
         self._y = y
-        self.idxs_labeled = np.array([], dtype=np.int32);
-        self.idxs_unlabeled = np.arange(len(x), dtype=np.int32)
+        self._idxs_labeled = np.array([], dtype=np.int32);
+        self._idxs_unlabeled = np.arange(len(x), dtype=np.int32)
+        self._test_mask = self._y == 'a'
         self.num_labels_max = 500
 
-    def get_labels_for_indices(self, idxs: NDArray) -> Y:
-        # TODO(marco): Ensure test data cannot be accessed
-        self.idxs_labeled = np.unique(np.concatenate([self.idxs_labeled, idxs]))
-        self.idxs_unlabeled = np.setdiff1d(self.idxs_unlabeled, idxs)
+    def request_labels(self, idxs: NDArray) -> Y:
+        assert not np.any(self._test_mask[idxs]), 'Accessing the test data is not allowed'
+        self._idxs_labeled = np.unique(np.concatenate([self._idxs_labeled, idxs]))
+        self._idxs_unlabeled = np.setdiff1d(self._idxs_unlabeled, idxs)
 
-        assert len(self.idxs_labeled) <= self.num_labels_max, f'Nope, you only get {self.num_labels_max} labels!'
+        assert len(self._idxs_labeled) <= self.num_labels_max, f'Nope, you only get {self.num_labels_max} labels!'
         return self._y[idxs]
 
-    def get_test_data(self, test_ratio: float):
-        idxs_all = np.random.permutation(np.arange(len(self.x)))
+    def get_test_data(self, test_ratio: float) -> tuple[X, Y]:
+        assert not np.any(self._test_mask), 'Test data can only be requested once'
+
+        idxs_all = np.random.permutation(np.arange(len(self._x)))
         idxs_train = idxs_all[:int(test_ratio*self.num_labels_max)]
 
-        x_test = self.x[idxs_train]
-        y_test = self.get_labels_for_indices(idxs_train)
+        x_test = self._x[idxs_train]
+        y_test = self.request_labels(idxs_train)
+        self._test_mask[idxs_train] = True
         return x_test, y_test
 
-    def reset(self):
-        self.idxs_labeled = np.array([]);
-        self.idxs_unlabeled = np.arange(len(self.x))
+    def unlabeled_indices(self) -> NDArray[np.int32]:
+        return np.array(self._idxs_unlabeled)
+
+    def labeled_indices(self) -> NDArray[np.int32]:
+        return np.array(self._idxs_labeled)
+
+    def num_labeled(self) -> int:
+        return len(self._idxs_labeled)
+
+    def num_unlabeled(self) -> int:
+        return len(self._idxs_unlabeled)
+
+    def num_unlabeled_remaining(self) -> int:
+        return self.num_labels_max - len(self._idxs_labeled)
+
+    def features(self, idxs: NDArray[np.int32]):
+        assert not np.any(self._test_mask[idxs]), 'Accessing the test data is not allowed'
+        return self._x[idxs]
+
+    def reset(self) -> None:
+        self._idxs_labeled = np.array([]);
+        self._idxs_unlabeled = np.arange(len(self._x))
+        self._test_mask[:] = False;
 
 class ActiveModel(ABC):
     @abstractmethod
@@ -128,28 +154,37 @@ def test_data_class():
     # Getting test data
     x_test, y_test = data.get_test_data(0.5)
     assert len(x_test) == int(data.num_labels_max/2) and len(y_test) == int(data.num_labels_max/2)
-    assert np.all(np.isin(data._y[data.idxs_labeled], y_test))
+    assert np.all(np.isin(data._y[data._idxs_labeled], y_test))
+
+    # Accessing test data
+    is_error = False
+    try:
+        data.features(data.labeled_indices()[:1])
+    except AssertionError:
+        is_error = True
+    assert is_error
 
     # Labeling a datapoint
-    idx = data.idxs_unlabeled[:1]
-    y = data.get_labels_for_indices(idx)
+    idx = data.unlabeled_indices()[:1]
+    y = data.request_labels(idx)
+    x = data.features(idx)
     assert data._y[idx] == y
-    assert not np.isin(idx, data.idxs_unlabeled)
+    assert np.all(data._x[idx] == x)
+    assert not np.isin(idx, data.unlabeled_indices())
+    assert np.isin(idx, data.labeled_indices())
 
     # Labeling everything possible
-    data.get_labels_for_indices(data.idxs_unlabeled[:249])
-    assert len(data.idxs_labeled) == 500
-
-    # Getting the same label again
-    data.get_labels_for_indices(data.idxs_labeled[:1])
+    data.request_labels(data.unlabeled_indices()[:249])
+    assert len(data.labeled_indices()) == 500
 
     # Requesting more than allowed
     is_error = False
     try:
-        data.get_labels_for_indices(data.idxs_unlabeled[:1])
+        data.request_labels(data.unlabeled_indices()[:1])
     except AssertionError:
         is_error = True
     assert is_error
+
 
     print('All tests passed')
 
