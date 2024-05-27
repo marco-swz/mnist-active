@@ -20,9 +20,8 @@ import torch
 # Experiment tracking
 
 # Project imports
-import ContrastiveLearningLogic, ContrastiveLearningModels
-from src import utils
-
+from . import logic, models
+from .. import utils
 
 if __name__ == "__main__":
     # Define indices for testing at the end
@@ -37,10 +36,10 @@ if __name__ == "__main__":
 
     # Data Preparation and Augmentation
     batch_size_SimCLR = 1024
-    dataloader = ContrastiveLearningLogic.create_augmented_data_loader(idxs_eval, batch_size_SimCLR)
+    dataloader = logic.create_augmented_data_loader(idxs_eval, batch_size_SimCLR)
 
     # SimCLR Model Setup
-    simclr_model = ContrastiveLearningLogic.create_SimCLR_model(encoder_type)
+    simclr_model = logic.create_SimCLR_model(encoder_type)
 
     # Contrastive Learning
     temperature = 0.5
@@ -49,7 +48,7 @@ if __name__ == "__main__":
     # For monitoring define wandb here
 
     # Contrastive Learning Loop
-    ContrastiveLearningLogic.train_contrastive_model(
+    logic.train_contrastive_model(
         model=simclr_model,
         train_loader=dataloader,
         epochs=num_epochs_contrastive_learning,
@@ -60,17 +59,17 @@ if __name__ == "__main__":
     )
 
     # Load the best checkpoint (of contrastive learning)
-    simclr_model = ContrastiveLearningLogic.load_simclr_model(simCLR_save_path, encoder_type, device)
+    simclr_model = logic.load_simclr_model(simCLR_save_path, encoder_type, device)
 
     # Adjust model for classification tasks
     base_encoder = simclr_model.encoder
-    classifier_model = ContrastiveLearningModels.Classifier(base_encoder, 10).to(device)
+    classifier_model = models.Classifier(base_encoder, 10).to(device)
 
     learning_rate_classifier = 1e-4
 
     # For monitoring define wandb here
 
-    classifier_model, labeled_indices = ContrastiveLearningLogic.train_classifier(
+    classifier_model, labeled_indices = logic.train_classifier(
         model=classifier_model,
         idxs_excluded=idxs_eval,
         num_epochs=1,
@@ -82,7 +81,7 @@ if __name__ == "__main__":
         save_path=None
     )
 
-    ContrastiveLearningLogic.evaluate_accuracy(classifier_model,
+    logic.evaluate_accuracy(classifier_model,
                                                idxs_eval,
                                                num_samples=100,
                                                batch_size=25,

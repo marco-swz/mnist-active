@@ -26,9 +26,8 @@ from tqdm import tqdm
 import wandb
 
 # Project imports
-from src import utils
-import ContrastiveLearningModels
-
+from . import models
+from .. import utils
 
 class AddGaussianNoise(object):
     def __init__(self, mean=0.0, std=1.0):
@@ -85,7 +84,7 @@ def create_augmented_data_loader(idxs_eval, batch_size=512):
 # Logic for creating SimCLR Model
 def create_SimCLR_model(encoder_type):
     if encoder_type == "cnn":
-        base_encoder = ContrastiveLearningModels.ActiveMnistCnn()
+        base_encoder = models.ActiveMnistCnn()
         projection_input_dim = 128 * 3 * 3
     elif encoder_type == "resnet18":
         base_encoder = models.resnet18(pretrained=False)
@@ -102,8 +101,8 @@ def create_SimCLR_model(encoder_type):
     else:
         raise NotImplementedError("Unsupported encoder type")
 
-    projection_head = ContrastiveLearningModels.ProjectionHead(input_dim=projection_input_dim)
-    simclr_model = ContrastiveLearningModels.SimCLR(base_encoder, projection_head)
+    projection_head = models.ProjectionHead(input_dim=projection_input_dim)
+    simclr_model = models.SimCLR(base_encoder, projection_head)
     return simclr_model
 
 
@@ -398,7 +397,7 @@ def evaluate_accuracy(model, idxs_eval, num_samples=100, batch_size=25,
 # Loading classifier model from checkpoint_path
 def load_classifier_model(checkpoint_path, base_encoder, num_classes, device):
     # Recreate the classifier model architecture
-    model = ContrastiveLearningModels.Classifier(base_encoder, num_classes)
+    model = models.Classifier(base_encoder, num_classes)
 
     # Load the saved state dictionary
     model_state = torch.load(checkpoint_path, map_location=torch.device(device))
