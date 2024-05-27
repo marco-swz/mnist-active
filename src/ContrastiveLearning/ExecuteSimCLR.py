@@ -27,7 +27,7 @@ from src import utils
 if __name__ == "__main__":
     # Define indices for testing at the end
     data = utils.Data()
-    idxs_eval = np.random.choice(data.idxs_unlabeled, 100, replace=False)
+    idxs_eval = np.random.choice(data._idxs_unlabeled, 100, replace=False)
     print("Indices for evaluation: len(idxs_eval) = {}, idxs_eval = {}".format(len(idxs_eval), idxs_eval))
 
     encoder_type = "cnn"  # CNN ('cnn'), ResNet18 ('resnet18'), or ResNet50 ('resnet50')

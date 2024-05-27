@@ -7,8 +7,9 @@ from statsmodels.stats.proportion import proportion_confint
 from keras.utils import to_categorical
 from keras.callbacks import History
 
-type X = Annotated[NDArray[np.float64], Literal["N", 28, 28]]
-type Y = Annotated[NDArray[np.int32], Literal["N"]]
+X = Annotated[NDArray[np.float64], Literal["N", 28, 28]]
+Y = Annotated[NDArray[np.int32], Literal["N"]]
+
 
 class Data:
     '''
@@ -57,6 +58,10 @@ class Data:
         assert len(self._idxs_labeled) <= self.num_labels_max, f'Nope, you only get {self.num_labels_max} labels!'
         return self._y[idxs]
 
+    def get_labels_for_indices(self, idxs) -> Y:
+        idxs = np.array(idxs, dtype=np.int32)
+        return self.request_labels(idxs)
+
     def get_test_data(self, test_ratio: float) -> tuple[X, Y]:
         assert not np.any(self._test_mask), 'Test data can only be requested once'
 
@@ -88,9 +93,9 @@ class Data:
         return self._x[idxs]
 
     def reset(self) -> None:
-        self._idxs_labeled = np.array([]);
+        self._idxs_labeled = np.array([])
         self._idxs_unlabeled = np.arange(len(self._x))
-        self._test_mask[:] = False;
+        self._test_mask[:] = False
 
 class ActiveModel(ABC):
     @abstractmethod

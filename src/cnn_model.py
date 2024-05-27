@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from numpy.typing import NDArray
 import numpy as np
 from scipy.stats import entropy
 from keras import layers, Sequential, Input, Model, utils
 
 from utils import Data, X, Y, eval_model, ActiveModel
+
 
 class ActiveCNN(ActiveModel):
     model: Model

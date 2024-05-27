@@ -45,7 +45,7 @@ class AddGaussianNoise(object):
 class SimCLRAugmentDataset(Dataset):
     def __init__(self, idxs_exclude=[]):
         self.data_instance = utils.Data()
-        images = self.data_instance.x
+        images = self.data_instance._x
         flattened_images = images.reshape(images.shape[0], -1)
         self.data_frame = pd.DataFrame(flattened_images)
         self.idxs_exclude = set(idxs_exclude)
@@ -190,7 +190,7 @@ def train_contrastive_model(model,
         print("Epoch [{}/{}], Training Loss: {}, Validation Loss: {}".format(epoch + 1, epochs, train_loss, val_loss))
 
         # Log metrics to wandb
-        #wandb.log({"Epoch": epoch,
+        # wandb.log({"Epoch": epoch,
         #           "Training Loss": train_loss,
         #           "Validation Loss": val_loss})
 
@@ -261,7 +261,7 @@ class ActiveLearningDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        image = self.data.x[self.indices[idx]].astype("float32") / 255.0  # Convert to float32 and normalize
+        image = self.data._x[self.indices[idx]].astype("float32") / 255.0  # Convert to float32 and normalize
         label = self.data.get_labels_for_indices([self.indices[idx]])[0]
         return torch.tensor(image).unsqueeze(0), torch.tensor(label)  # Unsqueeze to add channel dimension
 
@@ -293,7 +293,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
     excluded_indices = set(idxs_excluded)
 
     # Initially label a random set of points excluding the excluded indices
-    available_indices = [i for i in range(len(data.x)) if i not in excluded_indices]
+    available_indices = [i for i in range(len(data._x)) if i not in excluded_indices]
     idxs_to_label = np.random.choice(available_indices, batch_size, replace=False)
     labeled_indices.update(idxs_to_label)
     num_iterations = int((search_size - batch_size) / batch_size)
@@ -325,8 +325,9 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
 
         # Select new points based on uncertainty
         # Ensure idxs_search only includes unlabeled indices
-        idxs_search = np.random.choice([i for i in range(len(data.x)) if i not in labeled_indices and i not in excluded_indices], search_size,
-                                           replace=False)
+        idxs_search = np.random.choice(
+            [i for i in range(len(data._x)) if i not in labeled_indices and i not in excluded_indices], 1000,
+            replace=False)
 
         # Calculate entropies directly
         model.eval()
@@ -335,7 +336,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
             for start in range(0, len(idxs_search), batch_size):
                 end = min(start + batch_size, len(idxs_search))
                 batch_indices = idxs_search[start:end]
-                images = data.x[batch_indices].astype("float32") / 255.0  # Convert to float32 and normalize
+                images = data._x[batch_indices].astype("float32") / 255.0  # Convert to float32 and normalize
                 images = torch.tensor(images).unsqueeze(1).to(device)  # Add channel dimension and move to device
                 outputs = model(images)
                 probs = torch.nn.functional.softmax(outputs, dim=1)
@@ -348,11 +349,11 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         idxs_to_label = idxs_search[idxs_max]
 
         # Check if adding these indices will exceed the maximum number of labels
-        if len(labeled_indices) + len(idxs_to_label) > search_size or\
+        if len(labeled_indices) + len(idxs_to_label) > search_size or \
                 len(labeled_indices) + len(idxs_to_label) > data.num_labels_max:
             print("Cannot label more than the maximum allowed number of labels.")
             idxs_to_label = np.random.choice(list(set(idxs_to_label) - labeled_indices),
-                                                data.num_labels_max - len(labeled_indices), replace=False)
+                                             data.num_labels_max - len(labeled_indices), replace=False)
 
         # Update the set of labeled indices
         labeled_indices.update(idxs_to_label)
@@ -392,3 +393,18 @@ def evaluate_accuracy(model, idxs_eval, num_samples=100, batch_size=25,
     accuracy = correct / total
     print(f"Accuracy on {num_samples} evaluation images: {accuracy * 100:.2f}%")
     return accuracy
+
+
+# Loading classifier model from checkpoint_path
+def load_classifier_model(checkpoint_path, base_encoder, num_classes, device):
+    # Recreate the classifier model architecture
+    model = ContrastiveLearningModels.Classifier(base_encoder, num_classes)
+
+    # Load the saved state dictionary
+    model_state = torch.load(checkpoint_path, map_location=torch.device(device))
+
+    # Load the state dictionary into the model
+    model.load_state_dict(model_state)
+
+    print("load_classifier_model(): Successfully loaded classifier!")
+    return model
