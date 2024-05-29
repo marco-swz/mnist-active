@@ -366,9 +366,6 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
     return model, labeled_indices
 
 
-# ToDo: (Lucas) Make sure that the images used here have not been used for contrastive learning
-# ToDo: do that by i.i.d. sampling the test-images prior to any training
-# Should be done!
 def evaluate_accuracy(model, idxs_eval, num_samples=100, batch_size=25,
                       device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
     data = utils.Data()

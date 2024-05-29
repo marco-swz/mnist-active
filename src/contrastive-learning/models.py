@@ -2,27 +2,10 @@
 This file contains the model definitions required for contrastive learning
 """
 
-# Data handling and mathematical operations
-import numpy as np
-import pandas as pd
-
-# Image processing
-from PIL import Image
-
 # PyTorch and related libraries
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-import torchvision.models as models
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
-
-# Additional utilities
-from tqdm import tqdm
-
-# Experiment tracking
-import wandb
 
 
 # Model Architecture Definition (only convolutional part)
