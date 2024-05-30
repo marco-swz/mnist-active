@@ -2,8 +2,6 @@
 This file contains the logic required for running the contrastive learning algorithm
 """
 
-# Standard library imports
-
 # Data handling and mathematical operations
 import pandas as pd
 import numpy as np
@@ -22,9 +20,6 @@ from torch.utils.data import DataLoader, Dataset, random_split
 # Additional utilities
 from tqdm import tqdm
 
-# Experiment tracking
-import wandb
-
 # Project imports
 from . import models
 from .. import utils
@@ -35,7 +30,8 @@ class AddGaussianNoise(object):
         self.std = std
 
     def __call__(self, tensor):
-        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+        tensor = tensor + torch.randn(tensor.size()) * self.std + self.mean
+        return torch.clamp(tensor, 0.0, 1.0)
 
     def __repr__(self):
         return self.__class__.__name__ + f'(mean={self.mean}, std={self.std})'
@@ -59,8 +55,7 @@ class SimCLRAugmentDataset(Dataset):
             transforms.RandomRotation(degrees=15),  # Randomly rotate within a range of -15 to 15 degrees
             transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
             transforms.ToTensor(),
-            AddGaussianNoise(mean=0.0, std=0.1),  # Add Gaussian noise
-            transforms.Normalize((0.5,), (0.5,)),  # Normalize the tensor with mean and std deviation of 0.5
+            AddGaussianNoise(mean=0.0, std=0.1),  # Add Gaussian noise with clipping to [0.0, 1.0]
         ])
 
     def __len__(self):
@@ -163,7 +158,7 @@ def train_contrastive_model(model,
     best_loss = float('inf')
 
     # Create val_loader, redefine dataloader
-    train_loader, val_loader = split_data_loader(train_loader, train_ratio=0.8)
+    train_loader, val_loader = split_data_loader(train_loader, train_ratio=0.9)
 
     for epoch in range(epochs):
         total_loss = 0
@@ -306,6 +301,11 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
 
         # Train the model
         # ToDo: Define Logic to stop training once loss is no longer getting smaller
+        # Monitoring Training Loss for Early Stopping.
+        patience = 10
+        best_train_loss = float('inf')
+        counter = 0
+
         for epoch in range(num_epochs):
             total_loss = 0
             model.train()
@@ -321,6 +321,15 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
 
             avg_train_loss = total_loss / len(train_dataloader)
             print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}")
+
+            # Update Monitoring
+            if avg_train_loss > best_train_loss:
+                counter += 1
+                if counter >= patience:
+                    break
+            else:
+                best_train_loss = avg_train_loss
+                counter = 0
 
         # Select new points based on uncertainty
         # Ensure idxs_search only includes unlabeled indices
