@@ -148,6 +148,7 @@ def train_contrastive_model(model,
                             temperature,
                             device,
                             learning_rate,
+                            train_val_split=0.9,
                             save_path=None):
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -158,7 +159,7 @@ def train_contrastive_model(model,
     best_loss = float('inf')
 
     # Create val_loader, redefine dataloader
-    train_loader, val_loader = split_data_loader(train_loader, train_ratio=0.9)
+    train_loader, val_loader = split_data_loader(train_loader, train_ratio=train_val_split)
 
     for epoch in range(epochs):
         total_loss = 0
@@ -266,7 +267,7 @@ def entropy(probs):
 
 def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_size=400, learning_rate=1e-3,
                      device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-                     freeze_base_encoder=True, save_path=None):
+                     freeze_base_encoder=True, save_path=None, search_pool_size=1000):
     # Decide whether to fine-tune the base encoder or not
     if not freeze_base_encoder:
         for param in model.base_encoder.parameters():
@@ -292,7 +293,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
     labeled_indices.update(idxs_to_label)
     num_iterations = int((search_size - batch_size) / batch_size)
 
-    for iteration in range(num_iterations):
+    for iteration in tqdm(range(num_iterations)):
         print(f"Active Learning Iteration {iteration + 1}/{num_iterations}")
 
         # Create dataset and dataloader for current batch of labeled data
@@ -300,7 +301,6 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         train_dataloader = DataLoader(current_dataset, batch_size=batch_size, shuffle=True)
 
         # Train the model
-        # ToDo: Define Logic to stop training once loss is no longer getting smaller
         # Monitoring Training Loss for Early Stopping.
         patience = 10
         best_train_loss = float('inf')
@@ -309,7 +309,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         for epoch in range(num_epochs):
             total_loss = 0
             model.train()
-            for images, labels in tqdm(train_dataloader):
+            for images, labels in train_dataloader:
                 images, labels = images.to(device), labels.to(device)
 
                 optimizer.zero_grad()
@@ -320,7 +320,6 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
                 total_loss += loss.item()
 
             avg_train_loss = total_loss / len(train_dataloader)
-            print(f"Epoch [{epoch + 1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}")
 
             # Update Monitoring
             if avg_train_loss > best_train_loss:
@@ -334,7 +333,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         # Select new points based on uncertainty
         # Ensure idxs_search only includes unlabeled indices
         idxs_search = np.random.choice(
-            [i for i in range(len(data._x)) if i not in labeled_indices and i not in excluded_indices], 1000,
+            [i for i in range(len(data._x)) if i not in labeled_indices and i not in excluded_indices], search_pool_size,
             replace=False)
 
         # Calculate entropies directly
@@ -367,7 +366,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         labeled_indices.update(idxs_to_label)
         print("Updated labeled indices. Currently using {} images".format(len(labeled_indices)))
 
-    print(f"Number of labeled data points: {len(labeled_indices)}")
+    print("Number of labeled data points: {}".format(len(labeled_indices)))
     if save_path is not None:
         torch.save(model.state_dict(), save_path)
         print("Model saved at ", save_path)
