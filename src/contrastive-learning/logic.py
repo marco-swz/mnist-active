@@ -38,9 +38,9 @@ class AddGaussianNoise(object):
 
 
 class SimCLRAugmentDataset(Dataset):
-    def __init__(self, idxs_exclude=[]):
-        self.data_instance = utils.Data()
-        images = self.data_instance._x
+    def __init__(self, data, idxs_exclude=[]):
+        self.data_instance = data
+        images = np.array([d.x for d in self.data_instance])
         flattened_images = images.reshape(images.shape[0], -1)
         self.data_frame = pd.DataFrame(flattened_images)
         self.idxs_exclude = set(idxs_exclude)
@@ -69,8 +69,8 @@ class SimCLRAugmentDataset(Dataset):
         return image1, image2
 
 
-def create_augmented_data_loader(idxs_eval, batch_size=512):
-    augmented_dataset = SimCLRAugmentDataset(idxs_eval)
+def create_augmented_data_loader(data, idxs_eval, batch_size=512):
+    augmented_dataset = SimCLRAugmentDataset(data, idxs_eval)
     # Shuffle == True to ensure that negative pairs are different across different epochs
     dataloader = DataLoader(augmented_dataset, batch_size=batch_size, shuffle=True)
     return dataloader
@@ -256,8 +256,8 @@ class ActiveLearningDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        image = self.data._x[self.indices[idx]].astype("float32") / 255.0  # Convert to float32 and normalize
-        label = self.data.get_labels_for_indices([self.indices[idx]])[0]
+        image = np.array([d.x for d in self.data[self.indices[idx]]]).astype("float32") / 255.0  # Convert to float32 and normalize
+        label = np.array([d.get_label() for d in self.data[self.indices[idx]]])
         return torch.tensor(image).unsqueeze(0), torch.tensor(label)  # Unsqueeze to add channel dimension
 
 
@@ -265,7 +265,7 @@ def entropy(probs):
     return -np.sum(probs * np.log(probs), axis=1)
 
 
-def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_size=400, learning_rate=1e-3,
+def train_classifier(model, data, idxs_excluded, num_epochs, batch_size=25, search_size=400, learning_rate=1e-3,
                      device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                      freeze_base_encoder=True, save_path=None, search_pool_size=1000):
     # Decide whether to fine-tune the base encoder or not
@@ -278,7 +278,6 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
             param.requires_grad = False
         print("Training only the final layers.")
 
-    data = utils.Data()
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
@@ -288,7 +287,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
     excluded_indices = set(idxs_excluded)
 
     # Initially label a random set of points excluding the excluded indices
-    available_indices = [i for i in range(len(data._x)) if i not in excluded_indices]
+    available_indices = [i for i in range(len(data.x)) if i not in excluded_indices]
     idxs_to_label = np.random.choice(available_indices, batch_size, replace=False)
     labeled_indices.update(idxs_to_label)
     num_iterations = int((search_size - batch_size) / batch_size)
@@ -333,7 +332,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
         # Select new points based on uncertainty
         # Ensure idxs_search only includes unlabeled indices
         idxs_search = np.random.choice(
-            [i for i in range(len(data._x)) if i not in labeled_indices and i not in excluded_indices], search_pool_size,
+            [i for i in range(len(data.x)) if i not in labeled_indices and i not in excluded_indices], search_pool_size,
             replace=False)
 
         # Calculate entropies directly
@@ -343,7 +342,7 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
             for start in range(0, len(idxs_search), batch_size):
                 end = min(start + batch_size, len(idxs_search))
                 batch_indices = idxs_search[start:end]
-                images = data._x[batch_indices].astype("float32") / 255.0  # Convert to float32 and normalize
+                images = np.array([d.x for d in data])[batch_indices].astype("float32") / 255.0  # Convert to float32 and normalize
                 images = torch.tensor(images).unsqueeze(1).to(device)  # Add channel dimension and move to device
                 outputs = model(images)
                 probs = torch.nn.functional.softmax(outputs, dim=1)
@@ -357,10 +356,10 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
 
         # Check if adding these indices will exceed the maximum number of labels
         if len(labeled_indices) + len(idxs_to_label) > search_size or \
-                len(labeled_indices) + len(idxs_to_label) > data.num_labels_max:
+                len(labeled_indices) + len(idxs_to_label) > utils.MAX_NUM_LABELED:
             print("Cannot label more than the maximum allowed number of labels.")
             idxs_to_label = np.random.choice(list(set(idxs_to_label) - labeled_indices),
-                                             data.num_labels_max - len(labeled_indices), replace=False)
+                                             utils.MAX_NUM_LABELED - len(labeled_indices), replace=False)
 
         # Update the set of labeled indices
         labeled_indices.update(idxs_to_label)
@@ -374,9 +373,8 @@ def train_classifier(model, idxs_excluded, num_epochs, batch_size=25, search_siz
     return model, labeled_indices
 
 
-def evaluate_accuracy(model, idxs_eval, num_samples=100, batch_size=25,
+def evaluate_accuracy(model, data, idxs_eval, num_samples=100, batch_size=25,
                       device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
-    data = utils.Data()
 
     # Create dataset and dataloader for the selected images
     eval_dataset = ActiveLearningDataset(data, idxs_eval)

@@ -1,23 +1,24 @@
 from __future__ import annotations
 
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 import numpy as np
 from scipy.stats import entropy
 from keras import layers, Sequential, Input, Model, utils
+import skopt
+import keras
 
-from utils import Data, X, Y, eval_model, ActiveModel
-
+from utils import DataPoint, X, Y, eval_model, ActiveModel, optimize_model, MAX_NUM_LABELED, split_data
 
 class ActiveCNN(ActiveModel):
     model: Model
-    x: X|None
-    y: Y|None
+    size_cnn: int
 
-    def __init__(self):
+    def __init__(self, size_cnn: int=32):
+        self.size_cnn = size_cnn
         input_shape = (28, 28, 1)
         self.model = Sequential([
             Input(shape=input_shape),
-            layers.Conv2D(32, kernel_size=(3, 3), activation="relu"),
+            layers.Conv2D(size_cnn, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
@@ -31,26 +32,18 @@ class ActiveCNN(ActiveModel):
             metrics=["accuracy"],
         )
 
-    def fit(self, data: Data):
+    def fit(self, data_unlabeled: ArrayLike):
         batch_size = 25
         search_size = 1000
 
-        idxs_to_label = np.random.choice(data.unlabeled_indices(), batch_size, replace=False)
+        data_labeled = np.array([])
+        data_unlabeled = np.array(data_unlabeled)
 
-        num_iterations = int(data.num_unlabeled_remaining() / batch_size)
+        num_iterations = int((MAX_NUM_LABELED - DataPoint._num_labeled) / batch_size)
         for _ in range(num_iterations):
-            x = data.features(idxs_to_label)
-            x = x.astype("float32") / 255
-            x = np.expand_dims(x, -1)
-
-            y = data.request_labels(idxs_to_label)
-            y = utils.to_categorical(y, 10)
-
-            self.model.fit(x, y, batch_size=batch_size, epochs=50, verbose=1)
-
-            idxs_search = np.random.choice(data.unlabeled_indices(), search_size, replace=False)
-            x_search = data.features(idxs_search)
-            x_search = x_search.astype("float32") / 255
+            idxs_search = np.random.choice(len(data_unlabeled), search_size, replace=False)
+            x_search = np.array([d.x for d in data_unlabeled[idxs_search]])
+            x_search = x_search.astype("float32") / 255 
             x_search = np.expand_dims(x_search, -1)
             pred_probs = self.model.predict(x_search, verbose=0)
 
@@ -58,18 +51,45 @@ class ActiveCNN(ActiveModel):
             idxs_max = np.argsort(entropies)[-batch_size:]
             idxs_to_label = idxs_search[idxs_max]
 
-        print(data.num_unlabeled_remaining())
+            data_to_label = data_unlabeled[idxs_to_label]
+            data_labeled = np.concatenate([data_labeled, data_to_label])
+            data_unlabeled = np.delete(data_unlabeled, idxs_to_label)
 
-    def predict(self, x: X) -> NDArray:
+            x = np.array([d.x for d in data_labeled])
+            x = x.astype("float32") / 255 
+            x = np.expand_dims(x, -1)
+
+            y = np.array([d.get_label() for d in data_labeled])
+            y = utils.to_categorical(y, 10)
+
+            self.model.fit(x, y, batch_size=batch_size, epochs=50, verbose=1)
+
+        print(DataPoint._num_labeled)
+
+    def predict(self, x: NDArray) -> NDArray:
         x = x.astype("float32") / 255
         x = np.expand_dims(x, -1)
         preds = np.argmax(self.model.predict(x), 1)
         print(preds)
         return preds
 
+    def get_params(self, deep: bool):
+        return { "size_cnn": self.size_cnn }
+
 if __name__ == "__main__":
-    data = Data()
-    x_test, y_test = data.get_test_data(test_ratio=0.2)
+    data = load_data()
+    data_train, data_test = split_data(data, 0.2)
+    x_test = np.array([d.x for d in data_test])
+    y_test = np.array([d.get_label() for d in data_test])
+
     model = ActiveCNN()
-    model.fit(data)
-    eval_model(model, x_test, y_test)
+    optimize_model(
+        model=model,
+        params={
+            'size_cnn': skopt.space.Integer(16, 128)
+        },
+        data=data,
+    )
+
+    #model.fit(data_train)
+    #eval_model(model, x_test, y_test)

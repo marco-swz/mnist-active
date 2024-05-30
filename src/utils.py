@@ -1,140 +1,67 @@
 from typing import Annotated, Literal, Optional
 from abc import ABC, abstractmethod
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 import keras
 from statsmodels.stats.proportion import proportion_confint
 from keras.utils import to_categorical
 from keras.callbacks import History
+import skopt
 
-X = Annotated[NDArray[np.float64], Literal["N", 28, 28]]
-Y = Annotated[NDArray[np.int32], Literal["N"]]
+X = Annotated[NDArray[np.float64], Literal[28, 28]]
+Y = np.int32
 
-
-class Data:
-    '''
-    A wrapper class for the dataset. 
-    It provides utility functions and ensures, only the allowed amount of labels are accessed.
-    '''
-    # All images
-    _x: X
-    # All labels
+MAX_NUM_LABELED = 500
+    
+class DataPoint:
+    _num_labeled = 0
     _y: Y
-    # The indices of `x` which were not labeled
-    _idxs_unlabeled: NDArray[np.int32]
-    # The indices of `x` which were already labeled
-    _idxs_labeled: NDArray[np.int32]
-    # Binary mask to indicate if a datapoint is part of the test set
-    _test_mask: NDArray[np.bool_]
-    # Maximum number of labeled data
-    num_labels_max: int
+    x: X
+    is_labeled: bool = False
 
-    def __init__(self, x: Optional[X]=None, y: Optional[Y]=None):
-        '''
-        If either `x` or `y` are `None`, the full MNIST dataset is downloaded from the web.
-        @param x: The images of the MNIST dataset
-        @param y: The labels corresponding to the images
-        @raises AssertionError: If `x` and `y` have different length
-        '''
-        if x is None or y is None:
-            (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
-            x = np.concatenate([x_train, x_test])
-            y = np.concatenate([y_train, y_test])
-
-        assert len(x) == len(y), '`x` and `y` need to be the same length!'
-
-        self._x = x
+    def __init__(self, x, y):
+        self.x = x
         self._y = y
-        self._idxs_labeled = np.array([], dtype=np.int32);
-        self._idxs_unlabeled = np.arange(len(x), dtype=np.int32)
-        self._test_mask = self._y == 'a'
-        self.num_labels_max = 500
 
-    def request_labels(self, idxs: NDArray) -> Y:
-        assert not np.any(self._test_mask[idxs]), 'Accessing the test data is not allowed'
-        self._idxs_labeled = np.unique(np.concatenate([self._idxs_labeled, idxs]))
-        self._idxs_unlabeled = np.setdiff1d(self._idxs_unlabeled, idxs)
+    def get_label(self) -> np.int32:
+        if not self.is_labeled:
+            DataPoint._num_labeled += 1
+            if DataPoint._num_labeled > MAX_NUM_LABELED:
+                raise PermissionError("No more labels allowed!")
 
-        assert len(self._idxs_labeled) <= self.num_labels_max, f'Nope, you only get {self.num_labels_max} labels!'
-        return self._y[idxs]
-
-    def get_labels_for_indices(self, idxs) -> Y:
-        idxs = np.array(idxs, dtype=np.int32)
-        return self.request_labels(idxs)
-
-    def get_test_data(self, test_ratio: float) -> tuple[X, Y]:
-        assert not np.any(self._test_mask), 'Test data can only be requested once'
-
-        idxs_all = np.random.permutation(np.arange(len(self._x)))
-        idxs_train = idxs_all[:int(test_ratio*self.num_labels_max)]
-
-        x_test = self._x[idxs_train]
-        y_test = self.request_labels(idxs_train)
-        self._test_mask[idxs_train] = True
-        return x_test, y_test
-
-    def unlabeled_indices(self) -> NDArray[np.int32]:
-        return np.array(self._idxs_unlabeled)
-
-    def labeled_indices(self) -> NDArray[np.int32]:
-        return np.array(self._idxs_labeled)
-
-    def num_labeled(self) -> int:
-        return len(self._idxs_labeled)
-
-    def num_unlabeled(self) -> int:
-        return len(self._idxs_unlabeled)
-
-    def num_unlabeled_remaining(self) -> int:
-        return self.num_labels_max - len(self._idxs_labeled)
-
-    def features(self, idxs: NDArray[np.int32]):
-        assert not np.any(self._test_mask[idxs]), 'Accessing the test data is not allowed'
-        return self._x[idxs]
-
-    def reset(self) -> None:
-        self._idxs_labeled = np.array([])
-        self._idxs_unlabeled = np.arange(len(self._x))
-        self._test_mask[:] = False
+        self.is_labeled = True
+        return self._y
 
 class ActiveModel(ABC):
     @abstractmethod
-    def fit(self, data: Data):
+    def fit(self, data_unlabeled: ArrayLike):
         pass
 
     @abstractmethod
     def predict(self, x: X) -> NDArray:
         pass
 
-class KerasWrapper:
-    '''A wrapper class to use Keras models within the scikit-learn ecosystem'''
-    batch_size: int
-    model: keras.Model
-    num_epochs: int
-    history: History
-    callbacks: list
 
-    def __init__(self, model: keras.Model, batch_size, num_epochs, callbacks=[]):
-        self.model = model
-        self.batch_size = batch_size
-        self.num_epochs = num_epochs
-        self.callbacks = callbacks
+def load_data() -> NDArray:
+    (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+    xs = np.concatenate([x_train, x_test])
+    ys = np.concatenate([y_train, y_test])
+    data = np.array([DataPoint(x, y) for x, y in zip(xs, ys)])
+    return data
 
-    def fit(self, X, y, X_val, y_val):
-        self.history = self.model.fit(
-            X.astype(np.float32), to_categorical(y, 10), 
-            batch_size=self.batch_size,
-            epochs=self.num_epochs,
-            validation_data=(X_val.astype(np.float32), to_categorical(y_val, 10)),
-            callbacks=self.callbacks,
-            verbose=1
-        )
+def split_data(data: NDArray, test_ratio: float) -> tuple[NDArray, NDArray]:
+    idxs_all = np.random.permutation(np.arange(len(data)))
+    idx_split = int(test_ratio*MAX_NUM_LABELED)
+    idxs_test = idxs_all[:idx_split]
+    idxs_train = idxs_all[idx_split:]
 
-    def predict(self, X):
-        pred_probs = self.model.predict(X.astype(np.float32), verbose=0)
-        return np.argmax(pred_probs, 1)
+    data_test = data[idxs_test]
+    data_train = data[idxs_train]
 
-def eval_model(model: ActiveModel, x: X, y: Y) -> tuple[float, tuple[float, float]]:
+    return data_train, data_test
+
+
+def eval_model(model: ActiveModel, x, y) -> tuple[float, tuple[float, float]]:
     '''Evaluates the provided model on the provided data.'''
     predictions = model.predict(x)
     num_correct = sum(predictions == y)
@@ -150,49 +77,31 @@ def eval_model(model: ActiveModel, x: X, y: Y) -> tuple[float, tuple[float, floa
     print('conf int:', conf_int)
     return accuracy, conf_int # pyright: ignore
 
-def test_data_class():
-    data = Data(
-        np.array([np.ones((28, 28))*i for i in range(510)]),
-        np.arange(510),
+
+def optimize_model(model: ActiveModel, params, data: NDArray):
+    '''Finds and return the best classifier parameters given a provided search space.'''
+    
+    # Initialize the Bayesian hyperparamter optimization 
+    optimizer = skopt.BayesSearchCV(
+        estimator=model, 
+        search_spaces=params,
+        n_iter=10, 
+        scoring='accuracy', 
+        cv=3,
+        refit=True, 
+        n_jobs=-1
     )
+    # Execute optimization
+    optimizer.fit(data)
 
-    # Getting test data
-    x_test, y_test = data.get_test_data(0.5)
-    assert len(x_test) == int(data.num_labels_max/2) and len(y_test) == int(data.num_labels_max/2)
-    assert np.all(np.isin(data._y[data._idxs_labeled], y_test))
+    # Create a pandas dataframe as result table
+    #result_table = pd.DataFrame(optimizer.cv_results_)\
+    #    .sort_values('rank_test_score')\
+    #    .set_index('rank_test_score')[['params', 'mean_test_score', 'std_test_score']]
 
-    # Accessing test data
-    is_error = False
-    try:
-        data.features(data.labeled_indices()[:1])
-    except AssertionError:
-        is_error = True
-    assert is_error
-
-    # Labeling a datapoint
-    idx = data.unlabeled_indices()[:1]
-    y = data.request_labels(idx)
-    x = data.features(idx)
-    assert data._y[idx] == y
-    assert np.all(data._x[idx] == x)
-    assert not np.isin(idx, data.unlabeled_indices())
-    assert np.isin(idx, data.labeled_indices())
-
-    # Labeling everything possible
-    data.request_labels(data.unlabeled_indices()[:249])
-    assert len(data.labeled_indices()) == 500
-
-    # Requesting more than allowed
-    is_error = False
-    try:
-        data.request_labels(data.unlabeled_indices()[:1])
-    except AssertionError:
-        is_error = True
-    assert is_error
-
-
-    print('All tests passed')
+    # Return the best model parameters found and the result table
+    return optimizer.best_params_#, result_table
 
 if __name__ == "__main__":
-    test_data_class()
+    pass
     
