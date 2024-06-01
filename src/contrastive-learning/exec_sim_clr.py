@@ -13,6 +13,7 @@ import torch
 
 # Project imports
 from numpy.typing import ArrayLike, NDArray
+from typing import Self
 from torch.utils.data import DataLoader
 
 from . import logic, models
@@ -34,7 +35,7 @@ class ActiveContrastiveLearner(utils.ActiveModel):
         self.simclr_model = logic.create_SimCLR_model(self.encoder_type)
 
         self.data = np.array(data_unlabeled)
-        self.idxs_eval = np.random.choice(len(self.data), 100, replace=False)
+        self.idxs_eval = np.random.choice(len(self.data), utils.NUM_TEST, replace=False)
 
         # Parameters for contrastive learning
         num_epochs_contrastive_learning = self.params.get("num_epochs_contrastive_learning", 100)
@@ -48,7 +49,7 @@ class ActiveContrastiveLearner(utils.ActiveModel):
         num_epochs_active_learning = self.params.get("num_epochs_active_learning", 100)
         learning_rate_classifier = self.params.get("learning_rate_classifier", 1e-4)
         batch_size_active_learning = self.params.get("batch_size_active_learning", 25)
-        search_size = self.params.get("search_size", 400)
+        search_size = self.params.get("search_size", utils.MAX_NUM_LABELED - utils.NUM_TEST)
         search_pool_size = self.params.get("search_pool_size", 10000)
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -126,8 +127,12 @@ class ActiveContrastiveLearner(utils.ActiveModel):
             device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
         )
 
-    def get_params(self, deep: bool):
+    def get_params(self, deep: bool=True) -> dict:
         return self.params
+
+    def set_params(self, **params) -> Self:
+        self.params = params
+        return self
 
 if __name__ == "__main__":
     data = utils.load_data()

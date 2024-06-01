@@ -1,31 +1,48 @@
 from __future__ import annotations
+from typing import override
 
 from numpy.typing import NDArray, ArrayLike
 import numpy as np
 from scipy.stats import entropy
 from keras import layers, Sequential, Input, Model, utils
 import skopt
-import keras
 
-from utils import DataPoint, X, Y, eval_model, ActiveModel, optimize_model, MAX_NUM_LABELED, split_data
+from utils import eval_model, ActiveModel, optimize_model, MAX_NUM_LABELED, split_data, load_data, NUM_TEST
 
 class ActiveCNN(ActiveModel):
     model: Model
-    size_cnn: int
+    params: dict
+    verbose: bool
+    num_train: int
 
-    def __init__(self, size_cnn: int=32):
-        self.size_cnn = size_cnn
+    def __init__(self, **params):
+        params["size_cnn"] = params.get("size_cnn", 32)
+        params["size_dense"] = params.get("size_dense", 10)
+        params["num_dense"] = params.get("num_dense", 1)
+        #self.num_train = MAX_NUM_LABELED - DataPoint._num_labeled
+        self.num_train = MAX_NUM_LABELED - NUM_TEST
+
+        self.verbose = params.get("verbose", False)
+
+        self.params = params
+
         input_shape = (28, 28, 1)
-        self.model = Sequential([
+        net = [
             Input(shape=input_shape),
-            layers.Conv2D(size_cnn, kernel_size=(3, 3), activation="relu"),
+            layers.Conv2D(self.params["size_cnn"], kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Flatten(),
             layers.Dropout(0.5),
-            layers.Dense(10, activation="softmax"),
-        ])
+        ]
+
+        for _ in range(self.params["num_dense"]):
+            net.append(layers.Dense(self.params["size_dense"], activation="relu"))
+
+        net.append(layers.Dense(10, activation="softmax"))
+
+        self.model = Sequential(net)
         self.model.compile(
             loss="categorical_crossentropy",
             optimizer="adam",
@@ -39,7 +56,7 @@ class ActiveCNN(ActiveModel):
         data_labeled = np.array([])
         data_unlabeled = np.array(data_unlabeled)
 
-        num_iterations = int((MAX_NUM_LABELED - DataPoint._num_labeled) / batch_size)
+        num_iterations = int(self.num_train / batch_size)
         for _ in range(num_iterations):
             idxs_search = np.random.choice(len(data_unlabeled), search_size, replace=False)
             x_search = np.array([d.x for d in data_unlabeled[idxs_search]])
@@ -62,32 +79,38 @@ class ActiveCNN(ActiveModel):
             y = np.array([d.get_label() for d in data_labeled])
             y = utils.to_categorical(y, 10)
 
-            self.model.fit(x, y, batch_size=batch_size, epochs=50, verbose=1)
+            self.model.fit(x, y, batch_size=batch_size, epochs=50, verbose=0)
 
-        print(DataPoint._num_labeled)
+        #print(DataPoint._num_labeled)
 
     def predict(self, x: NDArray) -> NDArray:
         x = x.astype("float32") / 255
         x = np.expand_dims(x, -1)
-        preds = np.argmax(self.model.predict(x), 1)
-        print(preds)
+        preds = np.argmax(self.model.predict(x, verbose=0), 1)
+        #print(preds)
         return preds
 
-    def get_params(self, deep: bool):
-        return { "size_cnn": self.size_cnn }
+    def get_params(self, deep: bool=True):
+        return self.params
+
+    def set_params(self, **params):
+        self.params = params
+        return self
 
 if __name__ == "__main__":
     data = load_data()
-    data_train, data_test = split_data(data, 0.2)
-    x_test = np.array([d.x for d in data_test])
-    y_test = np.array([d.get_label() for d in data_test])
+    #data_train, data_test = split_data(data, 0.2)
+    #x_test = np.array([d.x for d in data_test])
+    #y_test = np.array([d.get_label() for d in data_test])
 
     model = ActiveCNN()
     optimize_model(
         model=model,
-        params={
-            'size_cnn': skopt.space.Integer(16, 128)
-        },
+        opt_params=dict(
+            size_cnn=skopt.space.Integer(16, 128),
+            size_dense=skopt.space.Integer(10, 128),
+            num_dense=skopt.space.Integer(1, 10),
+        ),
         data=data,
     )
 
