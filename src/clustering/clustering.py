@@ -7,70 +7,92 @@ import matplotlib.pyplot as plt
 from collections import Counter
 import random
 from math import sqrt
+from numpy.typing import NDArray, ArrayLike
 
+from utils import ActiveModel, MAX_NUM_LABELED, load_data, NUM_TEST, split_data, load_data
 
+class ActiveCluster(ActiveModel):
+    model: KMeans
+    modelMap: map
+    params: dict
+    num_train: int
+    num_test: int
 
-# Method Plot Clusters
-def plot_2D_Clusters (train_data, kmean):
-    kmean_Y = kmean.predict(train_data)
-    centers = kmean.cluster_centers_
-    plt.scatter(train_data[:, 0], train_data[:, 1], c=kmean_Y, s=50, cmap='viridis')
-    plt.scatter(centers[:, 0], centers[:, 1], c='red', s=200, alpha=0.75, marker='X')
-    plt.title('K-Means Clustering')
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
-    plt.show()
+    def __init__(self, **params):
+        params["num_cluster"] = params.get("num_cluster", 20) # nr_cluster = 40
+        params["pca_dimmension"] = params.get("pca_dimmension", 10) # dimmension = 10
+        params["num_iter"] = params.get("num_iter", 80) # iter = 100
+        self.params = params
+        
+        self.num_train = MAX_NUM_LABELED - NUM_TEST
+        self.num_test = NUM_TEST
+        self.modelMap = {}
 
-# Get array of different labels
-def getDiffLabels(labels):
-    diffLab = []
-    for l in labels:
-        if np.isin(l,diffLab) == False: 
-            diffLab = np.append(diffLab,l)
-    return diffLab
+    def fit(self, data_unlabeled: ArrayLike):
+        x = np.array([d.x for d in data_unlabeled])
+        x = self.perf_PCA(x)
+        # Train Cluster with KMeans 
+        self.model = KMeans(init='k-means++',n_clusters=self.params["num_cluster"], n_init=self.params["num_iter"])
+        self.model.fit(x)
+        # Get Map of Matched Labels
+        self.active_lern(x, data_unlabeled)
 
-def creatIndexArray(n):
-    array = []
-    for i in range(n):
-        array.append(i)
-    return array
+    # Get Data after performed PCA   
+    def perf_PCA (self, x: NDArray): # Alternative T-SNE  
+        data = np.reshape(x, (len(x),784))       
+        pca = PCA(n_components=self.params["pca_dimmension"])
+        pca_data = pca.fit_transform(data)
+        return pca_data
 
+    # Run Active Learning to get Map for Predictions
+    def active_lern(self, x, dataPoints):
+        labl_per_cluster = int(self.num_train/self.params["num_cluster"])
+        labels = self.model.labels_
+        centers = self.model.cluster_centers_
+        map = {}
+        for c in range (0,self.params["num_cluster"]):
+            
+            center = centers[c,:]
+            clusterPoints = np.where(labels == c)[0]
+            formular = self._get_distance(center, x)
+            sortedByDistance = sorted(clusterPoints, key = formular)
+            idx_to_labeles = sortedByDistance[0:labl_per_cluster]
+            data_get_labele = dataPoints[idx_to_labeles]
+            trueLabels = np.array([d.get_label() for d in data_get_labele])
+            count = Counter(trueLabels)
+            # Most Common Label
+            mostCommonLabel, _ = count.most_common(1)[0]
+            self.modelMap[c] =  mostCommonLabel
+        
+    def predict(self, x: NDArray) -> NDArray: 
+        pca_x = self.perf_PCA(x)
+        predKmean = self.model.predict(pca_x)
+        predLabels = [self.modelMap[n] for n in predKmean]          
+        return predLabels 
 
-def distance (center, data, nr_cluster):
-    def formular(x):
-        d= 0
-        for n in range(dimmension):
-            d += (center[n]-data[x,n])**2
-        return abs(d)
-    return formular
+    def get_params(self, deep: bool=True):
+        return self.params
 
-# Run Active Learning to label Data
-def active_lern (nr_cluster, centers, data_X, data_Y, labels, nr_Points_per_cluster):
-    usedPoints = []
-    matchedLabels = {}
-    for c in range (0,nr_cluster):
-        center = centers[c,:]
-        clusterPoints = np.where(labels == c)[0]
-        formular = distance(center, data_X, nr_cluster)
-        sortedByDistance = sorted(clusterPoints, key = formular)
-        trueLabels = []
-        for i in range(nr_Points_per_cluster):
-            trueLabels.append(data_Y[sortedByDistance[i]])
-            usedPoints.append(sortedByDistance[i])
+    def set_params(self, **params):
+        self.params = params
+        return self
 
-        count= Counter(trueLabels)
-        # Most Common Label
-        mostCommonLabel, _ = count.most_common(1)[0]
-        matchedLabels[c] =  mostCommonLabel
-    return matchedLabels, usedPoints
+    # Get array of different labels in Modelmap
+    def getDiffLabels(self):
+        diffLab = []
+        for l in self.modelMap.values():
+            if np.isin(l,diffLab) == False: 
+                diffLab = np.append(diffLab,l)
+        return diffLab
 
-# Predicted label for Data
-def predict(data_X, kmean, map):
-    predKmean = kmean.predict(data_X)
-    predLabels = []
-    for n in predKmean:
-        predLabels.append(map[n])
-    return predLabels     
+    # Calculate the distance between points
+    def _get_distance (self, center, data: NDArray):
+        def formular(x):
+            d = 0
+            for n in range(self.params["pca_dimmension"]):
+                d += (center[n]-data[x,n])**2
+            return d
+        return formular
 
 # Get Error and Confidence for predicted Labels
 def getConfidence(predLabels, trueLabels, c):
@@ -93,66 +115,31 @@ def createTestData(n,given_X, given_Y, notUsed):
         test_Y.append(given_Y[i])
     return test_X, test_Y
 
-# Defined variables
-nr_cluster = 20
-dimmension = 10
-nr_train = 400
-nr_test = 100
-iter = 100
-c = 1.96
+if __name__ == "__main__":
+    c = 1.96
+    data = load_data()
+    data_train, data_test = split_data(data, 0.2)
+    x_test = np.array([d.x for d in data_test])
+    y_test = np.array([d.get_label() for d in data_test])
+    model = ActiveCluster()
+    model.fit(data_train)
+    predTest = model.predict(x_test)
+    error, interval = getConfidence(predTest, y_test, c)
+    print(str(error)+" +- " +str(interval))
 
-# Load Mnist Dataset
-(mnist_X, mnist_Y), (_, _) = mnist.load_data()
-train_X = np.reshape(mnist_X, (60000,784))
 
-# Create array with indexes of Data
-notUsedData = creatIndexArray(mnist_X.shape[0])
-
-# Alternative T-SNE          
-# Run PCA on Dataset 
-pca = PCA(n_components=dimmension )
-train_X_pca = pca.fit_transform(train_X)
-
-# Train Cluster with KMeans 
-kmean = KMeans(init='k-means++',n_clusters=nr_cluster, n_init=iter)
-kmean.fit(train_X_pca)
-
-# get Map of Matched Labels
-matchedMap, usedData = active_lern(nr_cluster, kmean.cluster_centers_, train_X_pca, mnist_Y, kmean.labels_,int(nr_train/nr_cluster))
-# Update used Data
-notUsedData = list(set(notUsedData).symmetric_difference(usedData))
-
-print(matchedMap)
-diffLabels = getDiffLabels(matchedMap.values())
-diffLabels.sort()
-print(diffLabels)
-
-trainSet_X, trainSet_Y = createTestData(40, train_X_pca, mnist_Y, usedData)
-
-test_X1, test_Y1 = createTestData(nr_test, train_X_pca, mnist_Y, notUsedData)
-test_X2, test_Y2 = createTestData(nr_test, train_X_pca, mnist_Y, notUsedData)
-test_X3, test_Y3 = createTestData(nr_test, train_X_pca, mnist_Y, notUsedData)
-
-predTrain = predict(trainSet_X,  kmean, matchedMap)
-predTest1 = predict(test_X1, kmean, matchedMap)
-predTest2 = predict(test_X2, kmean, matchedMap)
-predTest3 = predict(test_X3, kmean, matchedMap)
-
-error, interval = getConfidence(predTrain, trainSet_Y, c)
-print(str(error)+" +- " +str(interval))
-
-error1, interval1 = getConfidence(predTest1, test_Y1, c)
-print(str(error1)+" +- " +str(interval1))
-error2, interval2 = getConfidence(predTest2, test_Y2, c)
-print(str(error2)+" +- " +str(interval2))
-error3, interval3 = getConfidence(predTest3, test_Y3, c)
-print(str(error3)+" +- " +str(interval3))
+#Method Plot Clusters
+def plot_2D_Clusters (train_data, kmean):
+    kmean_Y = kmean.predict(train_data)
+    centers = kmean.cluster_centers_
+    plt.scatter(train_data[:, 0], train_data[:, 1], c=kmean_Y, s=50, cmap='viridis')
+    plt.scatter(centers[:, 0], centers[:, 1], c='red', s=200, alpha=0.75, marker='X')
+    plt.title('K-Means Clustering')
+    plt.xlabel('Feature 1')
+    plt.ylabel('Feature 2')
+    plt.show()
 
 
 
 
-
-
-
-    
 
