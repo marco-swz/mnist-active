@@ -51,7 +51,7 @@ class ActiveCNN(ActiveModel):
 
     def fit(self, data_unlabeled: ArrayLike):
         batch_size = 25
-        search_size = 1000
+        search_size = 5000
 
         data_labeled = np.array([])
         data_unlabeled = np.array(data_unlabeled)
@@ -107,9 +107,9 @@ if __name__ == "__main__":
     optimize_model(
         model=model,
         opt_params=dict(
-            size_cnn=skopt.space.Integer(16, 128),
-            size_dense=skopt.space.Integer(10, 128),
-            num_dense=skopt.space.Integer(1, 10),
+            size_cnn=skopt.space.Integer(16, 500),
+            size_dense=skopt.space.Integer(10, 500),
+            num_dense=skopt.space.Integer(1, 20),
         ),
         data=data,
     )

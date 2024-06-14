@@ -105,7 +105,7 @@ def optimize_model(model: ActiveModel, opt_params: dict, data: NDArray):
     optimizer = skopt.BayesSearchCV(
         estimator=model, 
         search_spaces=opt_params,
-        n_iter=1, 
+        n_iter=50, 
         cv=3,
         refit=True, 
         n_jobs=1,
