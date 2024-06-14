@@ -13,6 +13,11 @@ Problem Setup:
 
 ### Active-CNN
 
+The main idea behind this approach is to make a smart selection of training batches.
+To find the next training batch, 5000 randomly selected unlabeled images are evaluated.
+Then, the entropy over the class probabilities is computed and the images with the highest entropy are chosen for labeling.
+The newly labeled data points are added to the training data and the training continues.
+
 ### Active-CNN + Contrastive Pre-Training
 
 ## Results
