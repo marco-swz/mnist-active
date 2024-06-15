@@ -1,6 +1,8 @@
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import StandardScaler
 from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,34 +16,84 @@ from utils import ActiveModel, MAX_NUM_LABELED, load_data, NUM_TEST, split_data,
 class ActiveCluster(ActiveModel):
     model: KMeans
     modelMap: map
+    pca: PCA
+    scaler: StandardScaler
     params: dict
     num_train: int
     num_test: int
+    train_data: NDArray
 
     def __init__(self, **params):
+        params["bool_tsne"] = params.get("perform_tsne",False) # false: perform PCA, true: perform TSNE
+        params["bool_scale"] = params.get("perform_scale",False) # false: perform PCA, true: perform TSNE
         params["num_cluster"] = params.get("num_cluster", 20) # nr_cluster = 40
-        params["pca_dimmension"] = params.get("pca_dimmension", 10) # dimmension = 10
         params["num_iter"] = params.get("num_iter", 80) # iter = 100
+        if(params["bool_scale"]):
+            params["pca_dimmension"] = params.get("pca_dimmension", 50) # dimmension = 50 for preparing the tsne
+        else:
+            params["pca_dimmension"] = params.get("pca_dimmension", 10) # dimmension = 10
+        params["tsne_dimmension"] = params.get("tsne_dimmension",2) 
         self.params = params
         
         self.num_train = MAX_NUM_LABELED - NUM_TEST
         self.num_test = NUM_TEST
         self.modelMap = {}
+        print("Done Initializing")
 
     def fit(self, data_unlabeled: ArrayLike):
         x = np.array([d.x for d in data_unlabeled])
-        x = self.perf_PCA(x)
+        self.train_data = x
+        if(self.params["bool_scale"]):
+            self.fit_Sacler(x)
+            print("Scaled Data") 
+        
+        if (self.params["bool_tsne"]):
+            #self.fit_TSNE(x)
+            x = self.perf_TSNE(x)
+        else:
+            self.fit_PCA(x)
+            x = self.perf_PCA(x)
+            print("Perf PCA")
+    
         # Train Cluster with KMeans 
         self.model = KMeans(init='k-means++',n_clusters=self.params["num_cluster"], n_init=self.params["num_iter"])
         self.model.fit(x)
+        print("Done Fitting")
         # Get Map of Matched Labels
         self.active_lern(x, data_unlabeled)
 
+    def fit_Sacler(self, x:NDArray):
+        data = np.reshape(x, (len(x),784))  
+        self.scaler = StandardScaler().fit(data)
+
+    # Fit TSNE with given x
+    def fit_TSNE(self, x: NDArray): 
+        self.fit_PCA(x)
+        data_pca_reduced = self.perf_PCA(x)
+        self.tsne = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300).fit_and_transfrom(data_pca_reduced)
+
+    # Get Data after performed TSNE  
+    def perf_TSNE (self, x: NDArray): # Alternative T-SNE  
+        self.fit_PCA(x)
+        data_pca_reduced = self.perf_PCA(x)    
+        print("Perf PCA in TSNE")
+        tsne_data = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300).fit_transform(data_pca_reduced)
+        print("Perf TSNE")
+        return tsne_data
+    
+    # Fit PCA with given x
+    def fit_PCA(self, x: NDArray): 
+        data = np.reshape(x, (len(x),784)) 
+        if(self.params["bool_scale"]):
+            data = self.scaler.transform(data)    
+        self.pca = PCA(n_components=self.params["pca_dimmension"]).fit(data)
+
     # Get Data after performed PCA   
     def perf_PCA (self, x: NDArray): # Alternative T-SNE  
-        data = np.reshape(x, (len(x),784))       
-        pca = PCA(n_components=self.params["pca_dimmension"])
-        pca_data = pca.fit_transform(data)
+        data = np.reshape(x, (len(x),784)) 
+        if(self.params["bool_scale"]):
+            data = self.scaler.transform(data)      
+        pca_data = self.pca.transform(data)
         return pca_data
 
     # Run Active Learning to get Map for Predictions
@@ -51,7 +103,6 @@ class ActiveCluster(ActiveModel):
         centers = self.model.cluster_centers_
         map = {}
         for c in range (0,self.params["num_cluster"]):
-            
             center = centers[c,:]
             clusterPoints = np.where(labels == c)[0]
             formular = self._get_distance(center, x)
@@ -63,10 +114,16 @@ class ActiveCluster(ActiveModel):
             # Most Common Label
             mostCommonLabel, _ = count.most_common(1)[0]
             self.modelMap[c] =  mostCommonLabel
+        print("Got MAP")
         
     def predict(self, x: NDArray) -> NDArray: 
-        pca_x = self.perf_PCA(x)
-        predKmean = self.model.predict(pca_x)
+        if (self.params["bool_tsne"]):
+            data = np.vstack((self.train_data, x))
+            all_trans = self.perf_TSNE(data)
+            transform_x = all_trans[-len(x):]
+        else:
+            transform_x = self.perf_PCA(x)
+        predKmean = self.model.predict(transform_x)
         predLabels = [self.modelMap[n] for n in predKmean]          
         return predLabels 
 
@@ -89,7 +146,7 @@ class ActiveCluster(ActiveModel):
     def _get_distance (self, center, data: NDArray):
         def formular(x):
             d = 0
-            for n in range(self.params["pca_dimmension"]):
+            for n in range(len(center)):
                 d += (center[n]-data[x,n])**2
             return d
         return formular
@@ -124,6 +181,7 @@ if __name__ == "__main__":
     model = ActiveCluster()
     model.fit(data_train)
     predTest = model.predict(x_test)
+    print("Predicted")
     error, interval = getConfidence(predTest, y_test, c)
     print(str(error)+" +- " +str(interval))
 
