@@ -3,15 +3,15 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
-from keras.datasets import mnist
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 import random
 from math import sqrt
 from numpy.typing import NDArray, ArrayLike
+import skopt
 
-from utils import ActiveModel, MAX_NUM_LABELED, load_data, NUM_TEST, split_data, load_data
+from utils import ActiveModel, MAX_NUM_LABELED, load_data, NUM_TEST, split_data, eval_model, optimize_model
 
 class ActiveCluster(ActiveModel):
     model: KMeans
@@ -28,24 +28,25 @@ class ActiveCluster(ActiveModel):
         params["bool_scale"] = params.get("perform_scale",False) # false: perform PCA, true: perform TSNE
         params["num_cluster"] = params.get("num_cluster", 20) # nr_cluster = 40
         params["num_iter"] = params.get("num_iter", 80) # iter = 100
+        params["pca_dimmension"] = params.get("pca_dimmension", 50) # dimmension = 50 for preparing the tsne
         if(params["bool_scale"]):
             params["pca_dimmension"] = params.get("pca_dimmension", 50) # dimmension = 50 for preparing the tsne
         else:
             params["pca_dimmension"] = params.get("pca_dimmension", 10) # dimmension = 10
-        params["tsne_dimmension"] = params.get("tsne_dimmension",2) 
+        params["tsne_dimmension"] = params.get("pca_dimmension",2) 
         self.params = params
         
         self.num_train = MAX_NUM_LABELED - NUM_TEST
         self.num_test = NUM_TEST
         self.modelMap = {}
-        print("Done Initializing")
+        #print("Done Initializing")
 
     def fit(self, data_unlabeled: ArrayLike):
         x = np.array([d.x for d in data_unlabeled])
         self.train_data = x
         if(self.params["bool_scale"]):
             self.fit_Sacler(x)
-            print("Scaled Data") 
+            #print("Scaled Data") 
         
         if (self.params["bool_tsne"]):
             #self.fit_TSNE(x)
@@ -53,12 +54,12 @@ class ActiveCluster(ActiveModel):
         else:
             self.fit_PCA(x)
             x = self.perf_PCA(x)
-            print("Perf PCA")
+            #print("Perf PCA")
     
         # Train Cluster with KMeans 
         self.model = KMeans(init='k-means++',n_clusters=self.params["num_cluster"], n_init=self.params["num_iter"])
         self.model.fit(x)
-        print("Done Fitting")
+        #print("Done Fitting")
         # Get Map of Matched Labels
         self.active_lern(x, data_unlabeled)
 
@@ -76,9 +77,9 @@ class ActiveCluster(ActiveModel):
     def perf_TSNE (self, x: NDArray): # Alternative T-SNE  
         self.fit_PCA(x)
         data_pca_reduced = self.perf_PCA(x)    
-        print("Perf PCA in TSNE")
+        #print("Perf PCA in TSNE")
         tsne_data = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300).fit_transform(data_pca_reduced)
-        print("Perf TSNE")
+        #print("Perf TSNE")
         return tsne_data
     
     # Fit PCA with given x
@@ -114,7 +115,7 @@ class ActiveCluster(ActiveModel):
             # Most Common Label
             mostCommonLabel, _ = count.most_common(1)[0]
             self.modelMap[c] =  mostCommonLabel
-        print("Got MAP")
+        #print("Got MAP")
         
     def predict(self, x: NDArray) -> NDArray: 
         if (self.params["bool_tsne"]):
@@ -131,7 +132,7 @@ class ActiveCluster(ActiveModel):
         return self.params
 
     def set_params(self, **params):
-        self.params = params
+        self.__init__(**params);
         return self
 
     # Get array of different labels in Modelmap
@@ -172,20 +173,6 @@ def createTestData(n,given_X, given_Y, notUsed):
         test_Y.append(given_Y[i])
     return test_X, test_Y
 
-if __name__ == "__main__":
-    c = 1.96
-    data = load_data()
-    data_train, data_test = split_data(data, 0.2)
-    x_test = np.array([d.x for d in data_test])
-    y_test = np.array([d.get_label() for d in data_test])
-    model = ActiveCluster()
-    model.fit(data_train)
-    predTest = model.predict(x_test)
-    print("Predicted")
-    error, interval = getConfidence(predTest, y_test, c)
-    print(str(error)+" +- " +str(interval))
-
-
 #Method Plot Clusters
 def plot_2D_Clusters (train_data, kmean):
     kmean_Y = kmean.predict(train_data)
@@ -197,7 +184,53 @@ def plot_2D_Clusters (train_data, kmean):
     plt.ylabel('Feature 2')
     plt.show()
 
+def run():
+    c = 1.96
+    data = load_data()
+    data_train, data_test = split_data(data, 0.2)
+    x_test = np.array([d.x for d in data_test])
+    y_test = np.array([d.get_label() for d in data_test])
+    model = ActiveCluster()
+    model.fit(data_train)
+    predTest = model.predict(x_test)
+    error, interval = getConfidence(predTest, y_test, c)
+    print(str(error)+" +- " +str(interval))
 
+def evaluate():
+    data = load_data()
+    model = ActiveCluster(
+        bool_tsne=False,
+        bool_scale=False,
+        num_cluster=100,
+        pca_dimmension=150,
+        num_iter=5,
+    )
+    eval_model(
+        model=model,
+        data=data,
+        num_retrains=10,
+        model_name='cluster_pca',
+    )
 
+def optimize():
+    data = load_data()
 
+    model = ActiveCluster()
+
+    optimize_model(
+        model=model,
+        opt_params=dict(
+            num_cluster=skopt.space.Integer(10, 100),
+            pca_dimmension=skopt.space.Integer(2, 150),
+            num_iter=skopt.space.Integer(5, 200),
+            bool_tsne=skopt.space.Categorical([True, False]),
+            bool_scale=skopt.space.Categorical([True, False]),
+        ),
+        data=data,
+    )
+
+if __name__ == "__main__":
+    #run()
+    #optimize()
+    evaluate()
 

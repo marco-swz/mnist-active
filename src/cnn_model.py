@@ -51,6 +51,7 @@ class ActiveCNN(ActiveModel):
 
     def fit(self, data_unlabeled: ArrayLike):
         batch_size = 25
+        #batch_size = 400
         search_size = 5000
 
         data_labeled = np.array([])
@@ -87,23 +88,20 @@ class ActiveCNN(ActiveModel):
         x = x.astype("float32") / 255
         x = np.expand_dims(x, -1)
         preds = np.argmax(self.model.predict(x, verbose=0), 1)
-        #print(preds)
         return preds
 
     def get_params(self, deep: bool=True):
         return self.params
 
     def set_params(self, **params):
-        self.params = params
+        self.__init__(**params)
         return self
 
-if __name__ == "__main__":
+def optimize():
     data = load_data()
-    #data_train, data_test = split_data(data, 0.2)
-    #x_test = np.array([d.x for d in data_test])
-    #y_test = np.array([d.get_label() for d in data_test])
 
     model = ActiveCNN()
+
     optimize_model(
         model=model,
         opt_params=dict(
@@ -114,5 +112,26 @@ if __name__ == "__main__":
         data=data,
     )
 
-    #model.fit(data_train)
-    #eval_model(model, x_test, y_test)
+def evaluate_default():
+    data = load_data()
+    model = ActiveCNN(
+        num_dense=1,
+        size_cnn=484,
+        size_dense=500,
+    )
+    eval_model(model, data, 10, 'cnn')
+
+def evaluate_active():
+    data = load_data()
+    model = ActiveCNN(
+        num_dense=3,
+        size_cnn=59,
+        size_dense=326,
+    )
+    eval_model(model, data, 10, 'active_cnn')
+
+
+if __name__ == "__main__":
+    #optimize()
+    #evaluate_default()
+    evaluate_active()

@@ -48,9 +48,10 @@ Finally, the previously segregated 100 test samples will spring into action for 
 
 ## Results
 
-| Model                     | Accuracy | 95% CI |
-|---------------------------|----------|--------|
-| CNN                       |          |        |
-| Clustering                |          |        |
-| Active-CNN                |          |        |
-| Active-CNN (pre-training) |          |        |
+| Model                     | Accuracy | 95% CI         |
+|---------------------------|----------|----------------|
+| CNN                       | 0.693    | (0.506, 0.880) |
+| Clustering (PCA)          | 0.873    | (0.851, 0.893) |
+| Clustering (T-SNE)        | 0.883    | (0.861, 0.902) |
+| Active-CNN                | 0.960    | (0.946, 0.971) |
+| Active-CNN (pre-training) |          |                |
