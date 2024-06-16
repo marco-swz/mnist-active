@@ -30,6 +30,21 @@ SinCLR learns representations by maximizing agreement between differently augmen
 - A small multi-layer perceptron model *projection head* that maps representations to the space where the contrastive loss is applied.
 - A *contrastive loss function* defined for a contrastive prediction task. 
 
+The contrastive loss function is defined as:
+
+$$l_{i, j} = - log \frac{exp(sim(z_i, z_j)/\tau}{\sum_{k=1}^{2N} \mathbb{1}_{[k \neq i]} exp(sim(z_i, z_j)/\tau},$$
+where $`z_i, z_j`$ are examples that have been put through the base encoder and the projection head, $`sim(u, v) = u^T v / ||u||||v||`$ denotes the dot product between $`l_2`$ normalized $`u`$ and $`v`$. Further, $`\mathbb{1}_{[k \neq i]}`$ is an indicator function evaluating to $`1`$ if $`k \neq 1`$ and $`0`$ else. $`\tau`$ denotes a temperature parameter. 
+
+Once the constrastive learning terminates, the best found model, based on the calculated contrastive loss, is loaded from disk and used for further downstream tasks.
+
+**Active Learning**
+
+Given the existing archicture from the contrastive learning phase, the model has to be restructured. This is done by removing the projection head and adding a new, deeper, MLP model to the "back" of the base encoder. From here on out, the active learning, based on a common supervised leraning mechanism, starts. 
+
+We start by sampling 25 images at random at by requesting their labels. The network will then be trained on them, before a random batch of 1000 random unseen images is taken and evaluated. Based on the shannon entropy that is perceived, these are sorted and those 25 samples that maximize the entropy are added to the training set. This is done in hope, that the samples which we know least of, are also those which we can learn most of. This process continues until the maximum number of samples, 400, is reached. 
+
+Finally, the previously segregated 100 test samples will spring into action for a final evaluation of the model.
+
 
 ## Results
 
