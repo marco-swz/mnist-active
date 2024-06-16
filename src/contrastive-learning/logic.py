@@ -256,8 +256,8 @@ class ActiveLearningDataset(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        image = np.array([d.x for d in self.data[self.indices[idx]]]).astype("float32") / 255.0  # Convert to float32 and normalize
-        label = np.array([d.get_label() for d in self.data[self.indices[idx]]])
+        image = np.array(self.data[self.indices[idx]].x).astype("float32") / 255.0  # Convert to float32 and normalize
+        label = np.array(self.data[self.indices[idx]].get_label())
         return torch.tensor(image).unsqueeze(0), torch.tensor(label)  # Unsqueeze to add channel dimension
 
 
@@ -287,7 +287,7 @@ def train_classifier(model, data, idxs_excluded, num_epochs, batch_size=25, sear
     excluded_indices = set(idxs_excluded)
 
     # Initially label a random set of points excluding the excluded indices
-    available_indices = [i for i in range(len(data.x)) if i not in excluded_indices]
+    available_indices = [i for i in range(len(data)) if i not in excluded_indices]
     idxs_to_label = np.random.choice(available_indices, batch_size, replace=False)
     labeled_indices.update(idxs_to_label)
     num_iterations = int((search_size - batch_size) / batch_size)
@@ -332,7 +332,7 @@ def train_classifier(model, data, idxs_excluded, num_epochs, batch_size=25, sear
         # Select new points based on uncertainty
         # Ensure idxs_search only includes unlabeled indices
         idxs_search = np.random.choice(
-            [i for i in range(len(data.x)) if i not in labeled_indices and i not in excluded_indices], search_pool_size,
+            [i for i in range(len(data)) if i not in labeled_indices and i not in excluded_indices], search_pool_size,
             replace=False)
 
         # Calculate entropies directly
