@@ -1,0 +1,6 @@
+rank_test_score,params,mean_test_score,std_test_score
+1,"OrderedDict({'num_cluster': 37, 'num_iter': 197, 'pca_dimmension': 61})",0.2660440308232293,0.12017011970935056
+2,"OrderedDict({'num_cluster': 35, 'num_iter': 192, 'pca_dimmension': 39})",0.23153309827838128,0.07944515334535429
+3,"OrderedDict({'num_cluster': 26, 'num_iter': 95, 'pca_dimmension': 18})",0.21334624765842292,0.05282975315673217
+4,"OrderedDict({'num_cluster': 49, 'num_iter': 174, 'pca_dimmension': 58})",0.19074604254289174,0.05318864604738016
+5,"OrderedDict({'num_cluster': 33, 'num_iter': 24, 'pca_dimmension': 27})",0.11996900158493402,0.04400015382782486

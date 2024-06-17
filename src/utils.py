@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
 import keras
+from sklearn.metrics import accuracy_score
 from statsmodels.stats.proportion import proportion_confint
 import skopt
 import pandas as pd
@@ -69,21 +70,56 @@ def split_data(data: NDArray, test_ratio: float) -> tuple[NDArray, NDArray]:
 
     return data_train, data_test
 
-def eval_model(model: ActiveModel, x, y) -> tuple[float, tuple[float, float]]:
+def eval_model(model: ActiveModel, data, num_retrains, model_name) -> None:
     '''Evaluates the provided model on the provided data.'''
-    predictions = model.predict(x)
-    num_correct = sum(predictions == y)
+
+    num_correct = []
+    num_test = []
+    for i in range(num_retrains):
+        DataPoint._num_labeled = 0
+        for d in data:
+            d.is_labeled = False
+            
+        data_train, data_test = split_data(data, 0.2)
+
+        params = model.get_params()
+        model_eval = type(model)(**params)
+
+        model_eval.fit(data_train)
+
+        x_test = np.array([d.x for d in data_test])
+        y_test = np.array([d.get_label() for d in data_test])
+
+        predictions = model_eval.predict(x_test)
+        num_correct.append(sum(predictions == y_test))
+        num_test.append(len(x_test))
+        accuracy = num_correct[-1]/num_test[-1]
+        print(f'eval nr {i}: acc = {accuracy}')
+
+
+    accuracy = sum(num_correct)/sum(num_test)
+    print('accuracy:', accuracy)
 
     conf_int = proportion_confint(
-        num_correct,
-        len(y),
-        alpha=0.1, 
+        sum(num_correct),
+        sum(num_test),
+        alpha=0.05, 
         method="beta"
     )
-    accuracy = num_correct/len(predictions)
-    print('accuracy:', accuracy)
     print('conf int:', conf_int)
-    return accuracy, conf_int # pyright: ignore
+
+    conf_int = 1.96*np.std(np.array(num_correct)/np.array(num_test))
+    print('conf int (simple):', (accuracy-conf_int, accuracy+conf_int))
+
+    table = pd.DataFrame(data=dict(num_correct=num_correct, num_test=num_test))
+
+    outdir = './data'
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    file_name = f'data/eval_result_{model_name}.csv'
+
+    table.to_csv(file_name)
+
 
 def optimizer_score(self, data_full):
     data = list(filter(lambda d: not d.is_labeled, data_full))
@@ -106,7 +142,7 @@ def optimize_model(model: ActiveModel, opt_params: dict, data: NDArray):
         estimator=model, 
         search_spaces=opt_params,
         n_iter=50, 
-        cv=3,
+        cv=2,
         refit=True, 
         n_jobs=1,
         scoring=optimizer_score,
@@ -122,10 +158,10 @@ def optimize_model(model: ActiveModel, opt_params: dict, data: NDArray):
 
     print(result_table)
 
-    outdir = './data_opt'
+    outdir = './data'
     if not os.path.exists(outdir):
         os.mkdir(outdir)
-    file_name = f'data_opt/opt_params_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv'
+    file_name = f'data/opt_params_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv'
 
     result_table.to_csv(file_name)
 

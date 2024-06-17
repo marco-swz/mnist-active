@@ -1,0 +1,6 @@
+rank_test_score,params,mean_test_score,std_test_score
+1,"OrderedDict({'bool_scale': False, 'bool_tsne': True, 'num_cluster': 13, 'num_iter': 177, 'pca_dimmension': 122})",0.7387168270632838,0.05845311267508822
+2,"OrderedDict({'bool_scale': True, 'bool_tsne': False, 'num_cluster': 37, 'num_iter': 136, 'pca_dimmension': 49})",0.7247872556250959,0.019183843912162504
+3,"OrderedDict({'bool_scale': False, 'bool_tsne': True, 'num_cluster': 81, 'num_iter': 145, 'pca_dimmension': 110})",0.7192944813584349,0.05987503374031427
+4,"OrderedDict({'bool_scale': False, 'bool_tsne': False, 'num_cluster': 31, 'num_iter': 105, 'pca_dimmension': 103})",0.7093517353831819,0.007546551560232536
+5,"OrderedDict({'bool_scale': True, 'bool_tsne': True, 'num_cluster': 61, 'num_iter': 17, 'pca_dimmension': 84})",0.6994357784092063,0.03106281583662047
