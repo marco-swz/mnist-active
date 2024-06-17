@@ -13,7 +13,7 @@ import torch
 
 # Project imports
 from numpy.typing import ArrayLike, NDArray
-from typing import Self
+#from typing import Self
 from torch.utils.data import DataLoader
 
 from . import logic, models
@@ -130,7 +130,7 @@ class ActiveContrastiveLearner(utils.ActiveModel):
     def get_params(self, deep: bool=True) -> dict:
         return self.params
 
-    def set_params(self, **params) -> Self:
+    def set_params(self, **params):
         self.params = params
         return self
 

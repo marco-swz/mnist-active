@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Self, Optional
+from typing import Annotated, Literal, Optional
 from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
@@ -49,7 +49,7 @@ class ActiveModel(ABC):
         ...
 
     @abstractmethod
-    def set_params(self, **params) -> Self:
+    def set_params(self, **params):
         ...
 
 def load_data() -> NDArray:
