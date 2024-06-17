@@ -134,7 +134,8 @@ class ActiveContrastiveLearner(utils.ActiveModel):
         self.params = params
         return self
 
-if __name__ == "__main__":
+
+def test_run():
     data = utils.load_data()
     activeContrastiveLearner = ActiveContrastiveLearner()
     activeContrastiveLearner.fit(data)
@@ -142,6 +143,16 @@ if __name__ == "__main__":
 
     xs = np.array([data[i].x for i in range(0, 40)])
     activeContrastiveLearner.predict(xs)
+
+
+def eval_contrastive_active_learning():
+    data = utils.load_data()
+    activeContrastiveLearner = ActiveContrastiveLearner()
+    utils.eval_model(activeContrastiveLearner, data, 3, 'contrastive_active_cnn')
+
+
+if __name__ == "__main__":
+    eval_contrastive_active_learning()
 
 
 
