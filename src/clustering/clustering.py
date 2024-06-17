@@ -13,6 +13,19 @@ from numpy.typing import NDArray, ArrayLike
 
 from utils import ActiveModel, MAX_NUM_LABELED, load_data, NUM_TEST, split_data, load_data
 
+
+#Method Plot Clusters
+def plot_2D_Clusters (train_data, kmean):
+    kmean_Y = kmean.predict(train_data)
+    centers = kmean.cluster_centers_
+    plt.scatter(train_data[:, 0], train_data[:, 1], c=kmean_Y, s=50, cmap='viridis')
+    plt.scatter(centers[:, 0], centers[:, 1], c='red', s=200, alpha=0.75, marker='X')
+    plt.title('K-Means Clustering')
+    plt.xlabel('Feature 1')
+    plt.ylabel('Feature 2')
+    plt.show()
+
+
 class ActiveCluster(ActiveModel):
     model: KMeans
     modelMap: map
@@ -21,7 +34,7 @@ class ActiveCluster(ActiveModel):
     params: dict
     num_train: int
     num_test: int
-    train_data: NDArray
+    train_data: ArrayLike
 
     def __init__(self, **params):
         params["bool_tsne"] = params.get("perform_tsne",False) # false: perform PCA, true: perform TSNE
@@ -46,38 +59,38 @@ class ActiveCluster(ActiveModel):
         if(self.params["bool_scale"]):
             self.fit_Sacler(x)
             print("Scaled Data") 
-        
+        # Only safe the TestData for TSNE, Clustering done in Predict
         if (self.params["bool_tsne"]):
-            #self.fit_TSNE(x)
-            x = self.perf_TSNE(x)
+            # Fit PCA for preprocessing the Data later
+            self.fit_PCA(x) 
+            self.train_data = data_unlabeled
+        # For Pca still fit clustering
         else:
             self.fit_PCA(x)
             x = self.perf_PCA(x)
             print("Perf PCA")
-    
+            # Train the clusters
+            self.train_kmeans(x)
+            # Get Map of Matched Labels
+            self.active_lern(x, data_unlabeled)
+
+    def train_kmeans(self, x:NDArray):
         # Train Cluster with KMeans 
         self.model = KMeans(init='k-means++',n_clusters=self.params["num_cluster"], n_init=self.params["num_iter"])
         self.model.fit(x)
+        if(self.params["bool_tsne"] and self.params["tsne_dimmension"]==2):
+            plot_2D_Clusters(x, self.model)
         print("Done Fitting")
-        # Get Map of Matched Labels
-        self.active_lern(x, data_unlabeled)
-
+        
     def fit_Sacler(self, x:NDArray):
         data = np.reshape(x, (len(x),784))  
         self.scaler = StandardScaler().fit(data)
 
-    # Fit TSNE with given x
-    def fit_TSNE(self, x: NDArray): 
-        self.fit_PCA(x)
+    # Fit and Perform TSNE together
+    def fit_perf_TSNE (self, x: NDArray): # Alternative T-SNE  
         data_pca_reduced = self.perf_PCA(x)
-        self.tsne = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300).fit_and_transfrom(data_pca_reduced)
-
-    # Get Data after performed TSNE  
-    def perf_TSNE (self, x: NDArray): # Alternative T-SNE  
-        self.fit_PCA(x)
-        data_pca_reduced = self.perf_PCA(x)    
         print("Perf PCA in TSNE")
-        tsne_data = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300).fit_transform(data_pca_reduced)
+        tsne_data = TSNE(n_components=self.params["tsne_dimmension"], n_iter=300, learning_rate=1000).fit_transform(data_pca_reduced)
         print("Perf TSNE")
         return tsne_data
     
@@ -103,29 +116,39 @@ class ActiveCluster(ActiveModel):
         centers = self.model.cluster_centers_
         map = {}
         for c in range (0,self.params["num_cluster"]):
-            center = centers[c,:]
-            clusterPoints = np.where(labels == c)[0]
-            formular = self._get_distance(center, x)
-            sortedByDistance = sorted(clusterPoints, key = formular)
-            idx_to_labeles = sortedByDistance[0:labl_per_cluster]
-            data_get_labele = dataPoints[idx_to_labeles]
-            trueLabels = np.array([d.get_label() for d in data_get_labele])
-            count = Counter(trueLabels)
+            center = centers[c,:] # Center of cluster c
+            idx_ClusterPoints = np.where(labels == c)[0] # indixes of ClusterPoints in cluster c
+            idx_sortedByDistance = self.get_center_near_points(center, x[idx_ClusterPoints]) # sort ClusterPoints by Distance, get Sorted Indexes
+            idx_sortedClusterPoints = idx_ClusterPoints[idx_sortedByDistance] # sort Indexes of ClusterPoints
+            idx_to_label = idx_sortedClusterPoints[0:labl_per_cluster] # get only the nearest labl_per_cluster Points
+            data_get_label = dataPoints[idx_to_label] # get DataPoints you want label
+            trueLabels = np.array([d.get_label() for d in data_get_label]) # get labels
+            count = Counter(trueLabels) # Count labels per cluster
             # Most Common Label
             mostCommonLabel, _ = count.most_common(1)[0]
             self.modelMap[c] =  mostCommonLabel
         print("Got MAP")
-        
+
+    # Calculate distance between points and center of cluster
+    def get_center_near_points(self, center, points:NDArray):
+        distances= np.linalg.norm(points-center, axis=1)
+        return np.argsort(distances)
+
     def predict(self, x: NDArray) -> NDArray: 
-        if (self.params["bool_tsne"]):
-            data = np.vstack((self.train_data, x))
-            all_trans = self.perf_TSNE(data)
-            transform_x = all_trans[-len(x):]
+        if (self.params["bool_tsne"]): # For TSNE you need to train and predict together 
+            train_data = np.array([d.x for d in self.train_data])
+            data = np.vstack((train_data, x))
+            all_trans = self.fit_perf_TSNE(data)
+            train_x = all_trans[:-len(x)] # Trainings data for Kmeans
+            self.train_kmeans(train_x) 
+            self.active_lern(train_x, self.train_data)
+            transform_x = all_trans[-len(x):] # test data to be predicted
         else:
             transform_x = self.perf_PCA(x)
         predKmean = self.model.predict(transform_x)
         predLabels = [self.modelMap[n] for n in predKmean]          
         return predLabels 
+
 
     def get_params(self, deep: bool=True):
         return self.params
@@ -141,15 +164,6 @@ class ActiveCluster(ActiveModel):
             if np.isin(l,diffLab) == False: 
                 diffLab = np.append(diffLab,l)
         return diffLab
-
-    # Calculate the distance between points
-    def _get_distance (self, center, data: NDArray):
-        def formular(x):
-            d = 0
-            for n in range(len(center)):
-                d += (center[n]-data[x,n])**2
-            return d
-        return formular
 
 # Get Error and Confidence for predicted Labels
 def getConfidence(predLabels, trueLabels, c):
@@ -178,26 +192,33 @@ if __name__ == "__main__":
     data_train, data_test = split_data(data, 0.2)
     x_test = np.array([d.x for d in data_test])
     y_test = np.array([d.get_label() for d in data_test])
-    model = ActiveCluster()
+    parameter1 = dict( perform_tsne = False, perform_scale = False )
+    parameter2 = dict( perform_tsne = False, perform_scale = True )
+    parameter3 = dict( perform_tsne = True, perform_scale = False )
+    parameter4 = dict( perform_tsne = True, perform_scale = True )
+    
+    model = ActiveCluster(**parameter1)
     model.fit(data_train)
     predTest = model.predict(x_test)
-    print("Predicted")
     error, interval = getConfidence(predTest, y_test, c)
-    print(str(error)+" +- " +str(interval))
+    print("PCA (Unscaled):"+ str(error)+" +- " +str(interval))
 
+    model.set_params(**parameter2)
+    model.fit(data_train)
+    predTest = model.predict(x_test)
+    error, interval = getConfidence(predTest, y_test, c)
+    print("PCA (Scaled):"+ str(error)+" +- " +str(interval))
+    
+    model.set_params(**parameter3)
+    model.fit(data_train)
+    predTest = model.predict(x_test)
+    error, interval = getConfidence(predTest, y_test, c)
+    print("TSNE (Unscaled):"+ str(error)+" +- " +str(interval))
 
-#Method Plot Clusters
-def plot_2D_Clusters (train_data, kmean):
-    kmean_Y = kmean.predict(train_data)
-    centers = kmean.cluster_centers_
-    plt.scatter(train_data[:, 0], train_data[:, 1], c=kmean_Y, s=50, cmap='viridis')
-    plt.scatter(centers[:, 0], centers[:, 1], c='red', s=200, alpha=0.75, marker='X')
-    plt.title('K-Means Clustering')
-    plt.xlabel('Feature 1')
-    plt.ylabel('Feature 2')
-    plt.show()
-
-
-
+    model.set_params(**parameter4)
+    model.fit(data_train)
+    predTest = model.predict(x_test)
+    error, interval = getConfidence(predTest, y_test, c)
+    print("TSNE (Scaled):"+ str(error)+" +- " +str(interval))
 
 

@@ -5,11 +5,19 @@ In this project we explored some approaches using active-training to build class
 Problem Setup:
 - Build the best possible classifier with only 500 image labels
 - All of MNIST can be used without labels for unsupervised pre-training
-- The 500 labels also include the test data
+- The 500 labels also include the test data (used split 400/100)
 
 ## Approaches
 
 ### Clustering
+
+The clustering approach is very simple and mostly used to get a comparison for the other approaches.
+The method performs a kMeans-clustering on the full trainings set and has different possibilities for data preperation. 
+Afterwards the true lables of the $n$ nearest points to the cluster centers are used to get the most common label of this cluster. The number of labels per cluster is calculated with $n= \frac{\#\ \text{trainglables}}{\#\ \text{clusters}}$ and for the distance between the center and the points the 2-norm is used. 
+
+Data Preperation:
+ - Standard Scaler or No Scaler 
+ - PCA or TSNE (also uses PCA for dimmensionaly reduction)
 
 ### Active-CNN
 
@@ -25,6 +33,6 @@ The newly labeled data points are added to the training data and the training co
 | Model                     | Accuracy | 95% CI |
 |---------------------------|----------|--------|
 | CNN                       |          |        |
-| Clustering                |          |        |
+| Clustering (PCA / TSNE)   |          |        |
 | Active-CNN                |          |        |
 | Active-CNN (pre-training) |          |        |
