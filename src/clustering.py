@@ -221,7 +221,7 @@ def optimize():
             num_cluster=skopt.space.Integer(10, 100),
             pca_dimmension=skopt.space.Integer(2, 150),
             num_iter=skopt.space.Integer(5, 200),
-            bool_tsne=skopt.space.Categorical([True, False]),
+            bool_tsne=skopt.space.Categorical([True]),
             bool_scale=skopt.space.Categorical([True, False]),
         ),
         data=data,
@@ -229,6 +229,6 @@ def optimize():
 
 if __name__ == "__main__":
     #run()
-    #optimize()
-    evaluate()
+    optimize()
+    #evaluate()
 
