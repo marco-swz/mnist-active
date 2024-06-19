@@ -13,7 +13,7 @@ Problem Setup:
 
 The clustering approach is very simple and mostly used to get a comparison for the other approaches.
 The method performs a kMeans-clustering on the full trainings set and has different possibilities for data preparation. 
-Afterward, the true labels of the $n$ nearest points to the cluster centers are used to get the most common label of this cluster. The number of labels per cluster is calculated with $n = \frac{\text{num_trainglables}}{\text{num_clusters}}$ and for the distance between the center and the points the 2-norm is used. 
+Afterward, the true labels of the $n$ nearest points to the cluster centers are used to get the most common label of this cluster. The number of labels per cluster is calculated with $n = \frac{\text{num traininglables}}{\text{num clusters}}$ and for the distance between the center and the points the 2-norm is used. 
 
 Data Preparation:
  - Standard Scaler or No Scaler 
