@@ -12,12 +12,12 @@ Problem Setup:
 ### Clustering
 
 The clustering approach is very simple and mostly used to get a comparison for the other approaches.
-The method performs a kMeans-clustering on the full trainings set and has different possibilities for data preperation. 
-Afterwards the true lables of the $n$ nearest points to the cluster centers are used to get the most common label of this cluster. The number of labels per cluster is calculated with $n = \frac{\text{trainglables}}{\text{clusters}}$ and for the distance between the center and the points the 2-norm is used. 
+The method performs a kMeans-clustering on the full trainings set and has different possibilities for data preparation. 
+Afterward, the true labels of the $n$ nearest points to the cluster centers are used to get the most common label of this cluster. The number of labels per cluster is calculated with $n = \frac{\text{num_trainglables}}{\text{num_clusters}}$ and for the distance between the center and the points the 2-norm is used. 
 
-Data Preperation:
+Data Preparation:
  - Standard Scaler or No Scaler 
- - PCA or TSNE (also uses PCA for dimmensionaly reduction)
+ - PCA or TSNE (also uses PCA for dimensionality reduction)
 
 ### Active-CNN
 
@@ -32,7 +32,7 @@ This approach utilizes a self-supervised learning approach called contrastive le
 
 **Contrastive Learning**
 
-SinCLR learns representations by maximizing agreement between differently augmented views of the same data example via a contrastive loss in the latent space. The contrastive learning framework comprises of four major components:
+SimCLR learns representations by maximizing agreement between differently augmented views of the same data example via a contrastive loss in the latent space. The contrastive learning framework comprises of four major components:
 - A stochastic *data augmentation* module, that transforms any given data example randomly resulting in two correlated views of the same example. Such pairs are considered positive pairs. Here, we are using *random resized cropping*, *random rotation*, *color jitter*, and *random Gaussian noise*.
 - A convolutional neural network *base encoder* that extracts representation vectors from augmented data examples.
 - A small multi-layer perceptron model *projection head* that maps representations to the space where the contrastive loss is applied.
@@ -43,11 +43,11 @@ The contrastive loss function is defined as:
 $$l_{i, j} = - log \frac{exp(sim(z_i, z_j)/\tau}{\sum_{k=1}^{2N} \mathbb{1}_{[k \neq i]} exp(sim(z_i, z_j)/\tau},$$
 where $`z_i, z_j`$ are examples that have been put through the base encoder and the projection head, $`sim(u, v) = u^T v / ||u||||v||`$ denotes the dot product between $`l_2`$ normalized $`u`$ and $`v`$. Further, $`\mathbb{1}_{[k \neq i]}`$ is an indicator function evaluating to $`1`$ if $`k \neq 1`$ and $`0`$ else. $`\tau`$ denotes a temperature parameter. 
 
-Once the constrastive learning terminates, the best found model, based on the calculated contrastive loss, is loaded from disk and used for further downstream tasks.
+Once the contrastive learning terminates, the best-found model, based on the calculated contrastive loss, is loaded from disk and used for further downstream tasks.
 
 **Active Learning**
 
-Given the existing archicture from the contrastive learning phase, the model has to be restructured. This is done by removing the projection head and adding a new, deeper, MLP model to the "back" of the base encoder. From here on out, the active learning, based on a common supervised leraning mechanism, starts. 
+Given the existing architecture from the contrastive learning phase, the model has to be restructured. This is done by removing the projection head and adding a new, deeper, MLP model to the "back" of the base encoder. From here on out, the active learning, based on a common supervised learning mechanism, starts. 
 
 We start by sampling 25 images at random at by requesting their labels. The network will then be trained on them, before a random batch of 1000 random unseen images is taken and evaluated. Based on the shannon entropy that is perceived, these are sorted and those 25 samples that maximize the entropy are added to the training set. This is done in hope, that the samples which we know least of, are also those which we can learn most of. This process continues until the maximum number of samples, 400, is reached. 
 
@@ -62,4 +62,4 @@ Finally, the previously segregated 100 test samples will spring into action for 
 | Clustering (PCA)          | 0.873    | (0.851, 0.893) |
 | Clustering (T-SNE)        | 0.883    | (0.861, 0.902) |
 | Active-CNN                | 0.960    | (0.946, 0.971) |
-| Active-CNN (pre-training) |          |                |
+| Active-CNN (pre-training) | 0.975    | (0.959, 0.986) |
