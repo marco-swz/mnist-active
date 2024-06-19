@@ -148,7 +148,7 @@ def test_run():
 def eval_contrastive_active_learning():
     data = utils.load_data()
     activeContrastiveLearner = ActiveContrastiveLearner()
-    utils.eval_model(activeContrastiveLearner, data, 3, 'contrastive_active_cnn')
+    utils.eval_model(activeContrastiveLearner, data, 5, 'contrastive_active_cnn')
 
 
 if __name__ == "__main__":
